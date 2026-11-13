@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Keeps the actions in ci.yml on their latest versions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Gradle wrapper, Android Gradle Plugin, Kotlin and app dependencies
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
