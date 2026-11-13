@@ -1,5 +1,6 @@
 package com.mrdoob.browser
 
+import android.Manifest
 import android.animation.Animator
 import android.animation.AnimatorSet
 import android.animation.ValueAnimator
@@ -10,6 +11,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.Rect
@@ -38,6 +40,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -51,6 +54,7 @@ import androidx.webkit.WebViewFeature
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayout
 import com.mrdoob.browser.databinding.ActivityMainBinding
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -91,6 +95,35 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.CreateDocument(HarExporter.MIME_SAVE)
     ) { uri ->
         if (uri != null) lifecycleScope.launch { HarExporter.saveTo(this@MainActivity, uri) }
+    }
+
+    // Floating pop-up (record / reload / cookies). Storage permission is only needed on Android 9-.
+    private lateinit var floatingControls: FloatingControls
+    private var afterStoragePermission: (() -> Unit)? = null
+    private val requestStoragePermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            Toast.makeText(
+                this,
+                "No storage permission — HAR files will be saved in the app's own Downloads folder",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        afterStoragePermission?.invoke()
+        afterStoragePermission = null
+    }
+    private val floatingHost = object : FloatingHost {
+        override fun hardReload() = this@MainActivity.hardReload()
+        override fun openHarSettings() = showHarSheet()
+        override fun openCookieSettings() { CookieSheet(this@MainActivity, currentUrl).show() }
+        override fun clearCookiesAndReload() = clearSiteCookiesAndReload()
+        override fun saveHar() = ensureStoragePermission {
+            lifecycleScope.launch { HarExporter.saveToDownloads(this@MainActivity) }
+        }
+        override fun shareHar() {
+            lifecycleScope.launch { HarExporter.share(this@MainActivity) }
+        }
     }
 
     private lateinit var documentStartScript: String
@@ -145,9 +178,12 @@ class MainActivity : AppCompatActivity() {
         configureWebView()
         panel = PanelRenderer(this, binding.panelView, binding.webView).also { it.init() }
         setupThreeJsPanel(this, binding.threePanelView, panelExtensionBridge)
+        floatingControls = FloatingControls(binding.root, floatingHost)
+        floatingControls.setEnabled(BrowserPrefs.floatingControls(this))
         observeDetectionState()
         observeNetworkLog()
         observeHarState()
+        observeHarSize()
         observeConsoleLog()
         wireUrlBar()
         wirePanelHeader()
@@ -477,7 +513,21 @@ class MainActivity : AppCompatActivity() {
                 HarRecorder.status.map { it.state }.distinctUntilChanged().collect { state ->
                     panel.setHarState(state)
                     tintMenuButton(state)
+                    floatingControls.onHarState(state)
                 }
+            }
+        }
+    }
+
+    // Live size shown on the floating Record button: the larger of the captured-body estimate
+    // (updates per request) and the real .har file size on disk (updates every few seconds).
+    private fun observeHarSize() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                HarRecorder.status
+                    .combine(HarRecorder.fileBytes) { s, file -> maxOf(s.bytes, file) }
+                    .distinctUntilChanged()
+                    .collect { floatingControls.onSize(it) }
             }
         }
     }
@@ -501,25 +551,65 @@ class MainActivity : AppCompatActivity() {
         ToolsSheet(this, object : ToolsHost {
             override val isDesktopMode: Boolean get() = desktopMode
             override val currentTextZoom: Int get() = BrowserPrefs.textZoom(this@MainActivity)
+            override val isFloatingControls: Boolean get() = BrowserPrefs.floatingControls(this@MainActivity)
             override val pageUrl: String get() = currentUrl
             override fun changeDesktopMode(on: Boolean) = setDesktopMode(on)
             override fun changeTextZoom(percent: Int) {
                 BrowserPrefs.setTextZoom(this@MainActivity, percent)
                 binding.webView.settings.textZoom = percent
             }
+            override fun changeFloatingControls(on: Boolean) = setFloatingControlsEnabled(on)
             override fun sharePage() = this@MainActivity.sharePage()
             override fun copyLink() {
                 if (hasPage()) copyToClipboard(currentUrl, "Link copied")
             }
             override fun openExternal() = this@MainActivity.openExternal()
-            override fun hardReload() {
-                binding.webView.clearCache(true)
-                binding.webView.reload()
-            }
+            override fun hardReload() = this@MainActivity.hardReload()
             override fun openCookies() { CookieSheet(this@MainActivity, currentUrl).show() }
             override fun openHar() = showHarSheet()
             override fun clearBrowsingData() = confirmClearBrowsingData()
         }).show()
+    }
+
+    private fun hardReload() {
+        binding.webView.clearCache(true)
+        binding.webView.reload()
+    }
+
+    private fun clearSiteCookiesAndReload() {
+        if (!hasPage() || !currentUrl.startsWith("http")) {
+            Toast.makeText(this, "Open a website first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        CookieTools.clearSite(currentUrl) {
+            runOnUiThread {
+                Toast.makeText(this, "Cookies deleted", Toast.LENGTH_SHORT).show()
+                hardReload()
+            }
+        }
+    }
+
+    /** Turning the pop-up on asks for storage access first when this Android version needs it. */
+    private fun setFloatingControlsEnabled(on: Boolean) {
+        if (!on) {
+            BrowserPrefs.setFloatingControls(this, false)
+            floatingControls.setEnabled(false)
+            return
+        }
+        ensureStoragePermission {
+            BrowserPrefs.setFloatingControls(this, true)
+            floatingControls.setEnabled(true)
+        }
+    }
+
+    /** Runs [then] straight away, or after the permission prompt (granted or not) on Android 9 and older. */
+    private fun ensureStoragePermission(then: () -> Unit) {
+        val needed = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+            PackageManager.PERMISSION_GRANTED
+        if (!needed) return then()
+        afterStoragePermission = then
+        requestStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
 
     private fun hasPage(): Boolean = currentUrl.isNotEmpty() && currentUrl != BLANK_URL

@@ -1,15 +1,18 @@
 package com.mrdoob.browser
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -86,6 +89,21 @@ object HarExporter {
     }
 
     private fun copyToAppDownloads(context: Context, file: File): String? {
+        // Android 9 and older: the real Downloads folder, once the user granted storage access.
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            @Suppress("DEPRECATION")
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Netex")
+            try {
+                if (dir.isDirectory || dir.mkdirs()) {
+                    file.copyTo(File(dir, file.name), overwrite = true)
+                    return "Downloads/Netex"
+                }
+            } catch (_: Exception) {
+                // fall through to the app's own downloads folder
+            }
+        }
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return null
         dir.mkdirs()
         val dest = File(dir, file.name)

@@ -59,6 +59,10 @@ object HarRecorder {
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status.asStateFlow()
 
+    // Size in bytes of the .har file as last written to the cache (0 until the first write).
+    private val _fileBytes = MutableStateFlow(0L)
+    val fileBytes: StateFlow<Long> = _fileBytes.asStateFlow()
+
     // Guarded by `lock`.
     @Volatile private var state = State.IDLE
     private val pages = LinkedHashMap<String, Page>()
@@ -268,6 +272,7 @@ object HarRecorder {
     // --- internals -----------------------------------------------------------------
 
     private fun resetSession() {
+        _fileBytes.value = 0L
         pages.clear()
         entries.clear()
         totalChars = 0
@@ -352,6 +357,7 @@ object HarRecorder {
         // The name follows the visited pages, so it can change between writes.
         if (owned != null && owned != target) owned.delete()
         ownedFile = target
+        _fileBytes.value = target.length()
         return target
     }
 }
