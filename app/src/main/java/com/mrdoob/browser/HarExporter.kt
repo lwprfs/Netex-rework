@@ -15,15 +15,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Share / save actions for the current HAR recording. Every call refreshes the cache file first. */
 object HarExporter {
 
-    // octet-stream so MediaStore / the file picker don't append ".json" to the .har name.
     const val MIME_SAVE = "application/octet-stream"
 
     private const val NOTHING = "Nothing recorded yet"
 
-    /** Opens the share sheet (apps / file managers) for the cached .har file. */
     suspend fun share(context: Context) {
         val file = HarRecorder.flush() ?: return toast(context, NOTHING)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
@@ -36,7 +33,6 @@ object HarExporter {
         context.startActivity(Intent.createChooser(send, "Share HAR"))
     }
 
-    /** Saves straight to Downloads/Netex (no prompt). */
     suspend fun saveToDownloads(context: Context) {
         val file = HarRecorder.flush() ?: return toast(context, NOTHING)
         val where = withContext(Dispatchers.IO) {
@@ -45,13 +41,11 @@ object HarExporter {
         toast(context, if (where != null) "Saved to $where" else "Couldn't save the file")
     }
 
-    /** Flushes, then hands the final file name to [launchPicker] (the system "save as" dialog). */
     suspend fun pickLocation(context: Context, launchPicker: (String) -> Unit) {
         val file = HarRecorder.flush() ?: return toast(context, NOTHING)
         launchPicker(file.name)
     }
 
-    /** Writes the recording to the location the user picked in the file manager. */
     suspend fun saveTo(context: Context, uri: Uri) {
         val file = HarRecorder.flush() ?: return toast(context, NOTHING)
         val ok = withContext(Dispatchers.IO) {
@@ -91,7 +85,6 @@ object HarExporter {
         }
     }
 
-    // Android 8/9: public Downloads needs a storage permission, so use the app's own Downloads dir.
     private fun copyToAppDownloads(context: Context, file: File): String? {
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return null
         dir.mkdirs()

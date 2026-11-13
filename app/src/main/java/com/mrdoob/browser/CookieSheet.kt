@@ -14,7 +14,6 @@ import com.mrdoob.browser.databinding.DialogAddCookieBinding
 import com.mrdoob.browser.databinding.ItemCookieBinding
 import com.mrdoob.browser.databinding.SheetCookiesBinding
 
-/** Full-height sheet: pick a site, see its cookies, add / delete them. */
 class CookieSheet(
     private val activity: AppCompatActivity,
     private val currentUrl: String
@@ -109,7 +108,7 @@ class CookieSheet(
         val dialog: AlertDialog = MaterialAlertDialogBuilder(activity)
             .setTitle("Add cookie")
             .setView(d.root)
-            .setPositiveButton("Add", null) // overridden below so errors keep the dialog open
+            .setPositiveButton("Add", null)
             .setNegativeButton("Cancel", null)
             .create()
         dialog.setOnShowListener {

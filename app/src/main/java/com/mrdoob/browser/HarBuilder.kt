@@ -5,14 +5,11 @@ import android.util.JsonWriter
 import java.io.Writer
 import java.time.Instant
 
-/** HAR 1.2 serialisation and the file-naming rules for exported recordings. */
 object HarBuilder {
 
     private const val MAX_NAME = 120
     private val UNSAFE = Regex("""[\\/:*?"<>|,\u0000-\u001F]""")
     private val SPACES = Regex("""\s+""")
-
-    // --- naming ----------------------------------------------------------------------
 
     private fun clean(s: String) = s.trim().replace(SPACES, "_").replace(UNSAFE, "_").trim('_', '.')
 
@@ -23,17 +20,11 @@ object HarBuilder {
 
     private fun segments(u: Uri): List<String> = u.pathSegments.filter { it.isNotBlank() }
 
-    /** Identity of a page: host + path, ignoring scheme, `www.`, query, fragment and trailing `/`. */
     fun pageKey(url: String): String {
         val u = Uri.parse(url)
         return host(u) + "/" + segments(u).joinToString("/")
     }
 
-    /**
-     * One page  → `example.com_blog_post-1`
-     * Many pages → `example.com,about,contact` (main site, then each page's name; the main
-     * site's own root page is represented by the first part). Spaces become `_`.
-     */
     fun fileBase(urls: List<String>): String {
         if (urls.isEmpty()) return "netex"
         val uris = urls.map { Uri.parse(it) }
@@ -59,8 +50,6 @@ object HarBuilder {
         }
         return name.take(MAX_NAME).ifEmpty { "netex" }
     }
-
-    // --- HAR -------------------------------------------------------------------------
 
     fun write(snap: HarRecorder.Snapshot, out: Writer) {
         val w = JsonWriter(out)
@@ -107,7 +96,7 @@ object HarBuilder {
         val pairs = ArrayList<Pair<String, String>>()
         try {
             for (n in uri.queryParameterNames) for (v in uri.getQueryParameters(n)) pairs += n to v
-        } catch (_: Exception) { /* opaque URI */ }
+        } catch (_: Exception) {  }
         writePairs(w, pairs)
     }
 

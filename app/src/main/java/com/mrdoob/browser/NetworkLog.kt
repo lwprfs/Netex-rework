@@ -16,7 +16,7 @@ object NetworkLog {
         val sizeBytes: Long = 0,
         val requestId: String? = null,
         val pending: Boolean = false,
-        // Only consumed by HarRecorder.
+
         val startedAt: Long = 0,
         val requestHeaders: List<Pair<String, String>> = emptyList(),
         val responseHeaders: List<Pair<String, String>> = emptyList(),

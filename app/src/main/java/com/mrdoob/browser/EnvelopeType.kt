@@ -1,6 +1,5 @@
 package com.mrdoob.browser
 
-/** Envelope `type` strings shared between the chrome shims and the native bridges. */
 object EnvelopeType {
     const val PORT_CONNECT = "port-connect"
     const val PORT_MESSAGE = "port-message"

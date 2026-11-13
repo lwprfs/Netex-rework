@@ -7,7 +7,6 @@ import com.mrdoob.browser.HarRecorder.State
 import com.mrdoob.browser.databinding.SheetToolsBinding
 import kotlinx.coroutines.launch
 
-/** The ⋮ menu: desktop site toggle plus entry points to the cookie and HAR sheets. */
 class ToolsSheet(
     private val activity: AppCompatActivity,
     private val desktopMode: Boolean,

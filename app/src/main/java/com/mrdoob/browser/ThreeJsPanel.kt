@@ -19,12 +19,6 @@ import org.json.JSONObject
 private const val PANEL_URL = "file:///android_asset/threejs-devtools/panel/panel.html"
 private const val SHIM_ASSET = "chrome-shim-panel.js"
 
-/**
- * Hosts the vendored three.js DevTools `panel.html` in its own WebView. The
- * panel-side chrome shim is injected at document start, so panel.js's calls
- * to `chrome.runtime.connect` and `chrome.devtools.inspectedWindow.tabId`
- * resolve against our native bridge.
- */
 @SuppressLint("SetJavaScriptEnabled")
 fun setupThreeJsPanel(context: Context, view: WebView, bridge: PanelExtensionBridge) {
     view.setBackgroundColor(view.materialColor(com.google.android.material.R.attr.colorSurfaceContainer))
@@ -41,9 +35,6 @@ fun setupThreeJsPanel(context: Context, view: WebView, bridge: PanelExtensionBri
             return true
         }
 
-        // target="_blank" links (e.g. the panel's feedback "+") would otherwise
-        // be no-ops; route them through a one-shot WebView whose only job is to
-        // catch the requested URL and hand it to the OS browser.
         override fun onCreateWindow(
             parent: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message
         ): Boolean {

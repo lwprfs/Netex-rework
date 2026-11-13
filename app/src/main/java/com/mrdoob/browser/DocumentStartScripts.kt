@@ -4,9 +4,6 @@ import android.content.Context
 
 object DocumentStartScripts {
 
-    // Order matters: constants → chrome shim → bridge → highlight → content-script →
-    // background, then network-shim. content-script gets a scoped `chrome` so
-    // its listeners don't observe its own sendMessage calls (self-loop OOM).
     private val ASSETS = listOf(
         Asset("threejs-devtools/constants.js"),
         Asset("chrome-shim-page.js"),

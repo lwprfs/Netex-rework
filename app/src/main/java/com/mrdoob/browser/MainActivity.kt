@@ -52,7 +52,7 @@ import org.json.JSONObject
 
 private const val TAG = "MainActivity"
 private const val BLANK_URL = "about:blank"
-private const val PROGRESS_ALPHA = 80 // ~31% of 255
+private const val PROGRESS_ALPHA = 80
 private const val PREF_LAST_URL = "last_url"
 private val SHARE_URL_REGEX = Regex("""https?://\S+""")
 
@@ -144,8 +144,7 @@ class MainActivity : AppCompatActivity() {
         installBackHandler()
         setupDragHandler()
         updateTabStyles()
-        // Reserve the edge-adjacent chrome buttons from Android's back-gesture region,
-        // otherwise a tap near the screen edge gets swallowed as a back swipe.
+
         excludeFromSystemGestures(binding.panelReload)
         excludeFromSystemGestures(binding.threeLogoButton)
 
@@ -169,8 +168,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // onRenderProcessGone → recreate() and process death mid-fullscreen leave the
-        // custom view attached to decorView; clean up so we don't leak.
+
         if (fullscreenView != null) exitFullscreen()
         super.onDestroy()
     }
@@ -192,9 +190,7 @@ class MainActivity : AppCompatActivity() {
             Intent.ACTION_SEND -> {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
                 if (text.isEmpty()) null
-                // If the share is a "Check this out: https://..." style blob,
-                // pull the first URL out — otherwise feed the raw text to loadUrl
-                // (which routes plain text to search).
+
                 else SHARE_URL_REGEX.find(text)?.value ?: text
             }
             else -> null
@@ -250,7 +246,7 @@ class MainActivity : AppCompatActivity() {
         settings.mediaPlaybackRequiresUserGesture = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            // WebView checks system night mode itself; pages with their own dark theme are left alone.
+
             WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true)
         }
         settings.setSupportZoom(true)
@@ -271,7 +267,7 @@ class MainActivity : AppCompatActivity() {
                 extensionRouter.onPageNavigationStarted()
                 setUrlBubbleProgress(0, animate = false)
                 if (!docStartInjectionAvailable) {
-                    // Racy fallback: best-effort injection before page scripts run.
+
                     view.evaluateJavascript(documentStartScript, null)
                 }
                 if (url != null && url != currentUrl) currentTitle = null
@@ -287,7 +283,7 @@ class MainActivity : AppCompatActivity() {
                 syncUrlBar(url)
                 HarRecorder.onPageVisited(url)
                 CookieTools.rememberSite(applicationContext, url)
-                // SPA route changes (history.pushState) skip onPageFinished — keep source honest.
+
                 sourceDirty = true
                 maybeRefreshSource()
             }
@@ -364,8 +360,6 @@ class MainActivity : AppCompatActivity() {
             .show(WindowInsetsCompat.Type.systemBars())
     }
 
-    // Per the Screen Orientation API, lock() is only valid in fullscreen — rotating the
-    // whole browser otherwise would be hostile.
     private fun applyOrientationLock(type: String?) {
         if (fullscreenView == null) return
         val target = when (type) {
@@ -383,8 +377,6 @@ class MainActivity : AppCompatActivity() {
         setRequestedOrientationIfChanged(target)
     }
 
-    // setRequestedOrientation is not a no-op when the value is unchanged — it round-trips
-    // through ActivityClient. Pages can spam lock() during transitions; gate the write.
     private fun setRequestedOrientationIfChanged(value: Int) {
         if (requestedOrientation != value) requestedOrientation = value
     }
@@ -525,7 +517,7 @@ class MainActivity : AppCompatActivity() {
         binding.urlBar.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
                 binding.urlBar.setText(if (currentUrl == BLANK_URL) "" else currentUrl)
-                // Wait until ACTION_UP's cursor placement settles, otherwise it clears the selection.
+
                 binding.urlBar.post { binding.urlBar.selectAll() }
             } else {
                 setUrlBarText(currentDisplay())
@@ -665,7 +657,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        // Bundled IANA TLD list; file extensions like ".js" / ".py" fall through to search.
+
         private var cachedTlds: Set<String>? = null
 
         private fun knownTlds(context: Context): Set<String> = cachedTlds ?: context
@@ -699,15 +691,13 @@ class MainActivity : AppCompatActivity() {
         val onStart: () -> Unit = {
             startHeight = binding.bottomPanel.layoutParams.height
         }
-        // Y axis grows downward → up-drag has negative dy → panel grows.
-        // The page WebView keeps a minimum height — collapsed to zero, pages
-        // see a zero-sized viewport (WebGPU swapchains reject it outright).
+
         val minPageHeight = (96 * resources.displayMetrics.density).toInt()
         val onMove: (Float) -> Unit = { dy ->
             val maxPanel = binding.root.height - binding.chromeContainer.height - minPageHeight
             setPanelHeight((startHeight - dy.toInt()).coerceIn(0, maxPanel.coerceAtLeast(0)))
         }
-        val onEnd: (Float) -> Unit = { /* stay where released */ }
+        val onEnd: (Float) -> Unit = {  }
         binding.chromeContainer.onDragStart = onStart
         binding.chromeContainer.onDragMove = onMove
         binding.chromeContainer.onDragEnd = onEnd

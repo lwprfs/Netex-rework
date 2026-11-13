@@ -10,7 +10,6 @@ import com.mrdoob.browser.HarRecorder.State
 import com.mrdoob.browser.databinding.SheetHarBinding
 import kotlinx.coroutines.launch
 
-/** HAR recording controls: status card, start / pause, export rows, clear. */
 class HarSheet(
     private val activity: AppCompatActivity,
     private val onPickLocation: (String) -> Unit

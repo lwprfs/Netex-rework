@@ -4,13 +4,6 @@ import android.net.Uri
 
 object UrlDisplay {
 
-    /**
-     * Returns a human-friendly form of [url] when it sits under the page's
-     * directory or origin — otherwise the full URL.
-     *
-     * - `https://threejs.org/examples/index.html` on `https://threejs.org/examples/` → `index.html`
-     * - `https://threejs.org/static/main.js` on `https://threejs.org/examples/` → `/static/main.js`
-     */
     fun shorten(url: String, pageUrl: String): String {
         val pageDir = pageDir(pageUrl)
         if (pageDir.isNotEmpty() && url.startsWith(pageDir)) {

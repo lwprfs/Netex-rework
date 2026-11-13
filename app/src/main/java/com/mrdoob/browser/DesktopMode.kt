@@ -2,7 +2,6 @@ package com.mrdoob.browser
 
 import android.content.Context
 
-/** Desktop-site preference plus the user agent / viewport tweaks that implement it. */
 object DesktopMode {
 
     private const val PREFS = "netex_tools"
@@ -15,16 +14,11 @@ object DesktopMode {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, enabled).apply()
     }
 
-    /** Desktop Chrome UA (no "Android" / "Mobile" tokens), reusing the WebView's Chrome version. */
     fun userAgent(mobileUa: String): String {
         val chrome = Regex("""Chrome/[\d.]+""").find(mobileUa)?.value ?: "Chrome/124.0.0.0"
         return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) $chrome Safari/537.36 Netex/0.1"
     }
 
-    /**
-     * WebView honours `<meta name=viewport content="width=device-width">` and would keep the mobile
-     * layout even with a desktop UA, so pin the layout viewport to 1024px while desktop mode is on.
-     */
     const val VIEWPORT_SCRIPT = """
 (function () {
   function fix() {

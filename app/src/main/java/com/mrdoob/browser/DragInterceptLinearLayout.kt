@@ -50,8 +50,7 @@ class DragInterceptLinearLayout @JvmOverloads constructor(
     override fun onTouchEvent(ev: MotionEvent): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                // Claim DOWN so MOVE/UP arrive when no child consumed it
-                // (lets empty-background drags work).
+
                 return true
             }
             MotionEvent.ACTION_MOVE -> {

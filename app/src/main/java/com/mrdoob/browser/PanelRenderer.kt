@@ -42,7 +42,7 @@ class PanelRenderer(
     }
 
     fun setTab(tab: Tab) {
-        // THREEJS is rendered by the separate panel WebView and never reaches this method.
+
         val name = when (tab) {
             Tab.CONSOLE -> "console"
             Tab.SOURCE -> "source"
