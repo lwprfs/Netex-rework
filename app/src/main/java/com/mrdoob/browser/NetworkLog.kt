@@ -16,11 +16,19 @@ object NetworkLog {
         val sizeBytes: Long = 0,
         val requestId: String? = null,
         val pending: Boolean = false,
-
+        // Only consumed by HarRecorder.
         val startedAt: Long = 0,
         val requestHeaders: List<Pair<String, String>> = emptyList(),
         val responseHeaders: List<Pair<String, String>> = emptyList(),
-        val requestBody: String = ""
+        val requestBody: String = "",
+        // HAR-only detail (untruncated body, base64 flag, transfer sizes, protocol, timings).
+        val harBody: String = "",
+        val harBase64: Boolean = false,
+        val encodedSize: Long = -1,
+        val decodedSize: Long = -1,
+        val transferSize: Long = -1,
+        val protocol: String = "",
+        val timings: LongArray? = null
     )
 
     sealed interface Event {

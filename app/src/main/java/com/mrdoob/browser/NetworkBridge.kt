@@ -33,9 +33,20 @@ class NetworkBridge(
                 requestId = obj.optString("requestId").takeIf { it.isNotEmpty() },
                 pending = obj.optBoolean("pending", false),
                 startedAt = obj.optLong("started"),
-                requestHeaders = pairs(obj.optJSONArray("reqHeaders")),
+                requestHeaders = RequestHeaders.merge(
+                    obj.optString("method").ifEmpty { "GET" },
+                    obj.optString("url"),
+                    pairs(obj.optJSONArray("reqHeaders"))
+                ),
                 responseHeaders = pairs(obj.optJSONArray("resHeaders")),
-                requestBody = obj.optString("reqBody")
+                requestBody = obj.optString("reqBody"),
+                harBody = obj.optString("harBody"),
+                harBase64 = obj.optBoolean("harB64", false),
+                encodedSize = obj.optLong("encoded", -1),
+                decodedSize = obj.optLong("decoded", -1),
+                transferSize = obj.optLong("transfer", -1),
+                protocol = obj.optString("protocol"),
+                timings = obj.optJSONArray("timings")?.let { a -> LongArray(a.length()) { a.optLong(it, -1) } }
             )
         )
     }

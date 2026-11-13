@@ -14,6 +14,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.Executors
 
+/**
+ * Records [NetworkLog] traffic into a HAR session that survives page navigations
+ * (the Network tab itself is cleared on every navigation, the recording is not).
+ *
+ * The session is mirrored to `cacheDir/har/<name>.har`. All file work runs on one
+ * serial thread, so writes and deletes can never interleave.
+ */
 object HarRecorder {
 
     enum class State { IDLE, RECORDING, PAUSED }
@@ -30,8 +37,10 @@ object HarRecorder {
     class Snapshot(val pages: List<Page>, val entries: List<Entry>)
 
     private const val MAX_ENTRIES = 3000
-    private const val MAX_CHARS = 24_000_000L
+    private const val MAX_CHARS = 24_000_000L // cap on stored body text, keeps long sessions from OOMing
     private const val FLUSH_DELAY_MS = 3000L
+
+    val isRecording: Boolean get() = state == State.RECORDING
 
     private val lock = Any()
     private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "har-io").apply { isDaemon = true } }
@@ -41,23 +50,27 @@ object HarRecorder {
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status.asStateFlow()
 
+    // Guarded by `lock`.
     @Volatile private var state = State.IDLE
     private val pages = LinkedHashMap<String, Page>()
     private val entries = LinkedHashMap<String, Entry>()
     private var totalChars = 0L
     private var seq = 0
-    private var currentUrl: String? = null
+    private var currentUrl: String? = null // latest page, tracked even while not recording
     private var currentKey: String? = null
     private var flushJob: Job? = null
 
+    // io thread only.
     private var cacheDir: File? = null
     private var ownedFile: File? = null
 
     fun init(context: Context) {
+        HarOptions.init(context)
         val dir = File(context.cacheDir, "har")
         scope.launch { cacheDir = dir }
     }
 
+    /** Starts a brand-new recording (and a new file). */
     fun start() {
         synchronized(lock) {
             resetSession()
@@ -65,7 +78,7 @@ object HarRecorder {
             currentUrl?.let { registerPage(it) }
             publish()
         }
-        scope.launch { ownedFile = null }
+        scope.launch { ownedFile = null } // the previous file stays in the cache untouched
     }
 
     fun togglePause() {
@@ -83,6 +96,7 @@ object HarRecorder {
         scheduleFlush()
     }
 
+    /** Drops the session and deletes every cached HAR file. */
     fun clear() {
         synchronized(lock) {
             resetSession()
@@ -95,6 +109,7 @@ object HarRecorder {
         }
     }
 
+    /** Called for every committed main-frame URL (including SPA route changes). */
     fun onPageVisited(url: String?) {
         if (url.isNullOrEmpty() || url == "about:blank") return
         synchronized(lock) {
@@ -120,7 +135,7 @@ object HarRecorder {
             val key = record.requestId ?: "n${seq++}"
             val old = entries[key]
             if (old == null) {
-
+                // Paused: only requests that were already in flight may still complete.
                 if (state != State.RECORDING) return
                 val started = if (record.startedAt > 0) record.startedAt
                 else System.currentTimeMillis() - record.durationMs
@@ -136,7 +151,10 @@ object HarRecorder {
         scheduleFlush()
     }
 
+    /** Writes the session to the cache dir right now and returns the file (null if nothing recorded). */
     suspend fun flush(): File? = withContext(io) { writeCache() }
+
+    // --- internals -----------------------------------------------------------------
 
     private fun resetSession() {
         pages.clear()
@@ -157,7 +175,7 @@ object HarRecorder {
 
     private fun currentPageId(): String? = currentKey?.let { pages[it]?.id }
 
-    private fun weight(r: NetworkLog.Record): Long = (r.body.length + r.requestBody.length).toLong()
+    private fun weight(r: NetworkLog.Record): Long = (r.body.length + r.requestBody.length + r.harBody.length).toLong()
 
     private fun evictIfNeeded() {
         val iter = entries.entries.iterator()
@@ -212,7 +230,7 @@ object HarRecorder {
             tmp.delete()
             return null
         }
-
+        // The name follows the visited pages, so it can change between writes.
         if (owned != null && owned != target) owned.delete()
         ownedFile = target
         return target

@@ -10,6 +10,7 @@ import com.mrdoob.browser.HarRecorder.State
 import com.mrdoob.browser.databinding.SheetHarBinding
 import kotlinx.coroutines.launch
 
+/** HAR recording controls: status card, start / pause, export rows, clear. */
 class HarSheet(
     private val activity: AppCompatActivity,
     private val onPickLocation: (String) -> Unit
@@ -24,6 +25,11 @@ class HarSheet(
 
         val job = activity.lifecycleScope.launch { HarRecorder.status.collect { render(b, it) } }
         dialog.setOnDismissListener { job.cancel() }
+
+        bindOption(b.harOptBodies, b.harOptBodiesSwitch, HarOptions::fullBodies)
+        bindOption(b.harOptResources, b.harOptResourcesSwitch, HarOptions::extraResources)
+        bindOption(b.harOptHeaders, b.harOptHeadersSwitch, HarOptions::requestHeaders)
+        bindOption(b.harOptImages, b.harOptImagesSwitch, HarOptions::images)
 
         b.harStart.setOnClickListener { HarRecorder.start() }
         b.harPause.setOnClickListener { HarRecorder.togglePause() }
@@ -43,6 +49,18 @@ class HarSheet(
             activity.lifecycleScope.launch { HarExporter.pickLocation(activity, onPickLocation) }
         }
         dialog.show()
+    }
+
+    private fun bindOption(
+        row: android.view.View,
+        sw: com.google.android.material.materialswitch.MaterialSwitch,
+        prop: kotlin.reflect.KMutableProperty0<Boolean>
+    ) {
+        sw.isChecked = prop.get()
+        row.setOnClickListener {
+            prop.set(!prop.get())
+            sw.isChecked = prop.get()
+        }
     }
 
     private fun render(b: SheetHarBinding, s: HarRecorder.Status) {
