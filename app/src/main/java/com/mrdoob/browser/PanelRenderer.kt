@@ -89,6 +89,12 @@ class PanelRenderer(
         }
     }
 
+    fun setHarState(state: HarRecorder.State) {
+        afterShellLoaded {
+            evalPanel("window.__panel.setHarState(${q(state.name.lowercase())})")
+        }
+    }
+
     fun deliverBlob(rid: String, dataUrl: String) {
         afterShellLoaded {
             evalPanel("window.__panel.deliverBlob(${q(rid)}, ${q(dataUrl)})")

@@ -15,7 +15,12 @@ object NetworkLog {
         val durationMs: Long,
         val sizeBytes: Long = 0,
         val requestId: String? = null,
-        val pending: Boolean = false
+        val pending: Boolean = false,
+        // Only consumed by HarRecorder.
+        val startedAt: Long = 0,
+        val requestHeaders: List<Pair<String, String>> = emptyList(),
+        val responseHeaders: List<Pair<String, String>> = emptyList(),
+        val requestBody: String = ""
     )
 
     sealed interface Event {
@@ -31,6 +36,7 @@ object NetworkLog {
 
     fun add(record: Record) {
         _events.tryEmit(Event.Added(record))
+        HarRecorder.onRecord(record)
     }
 
     fun reset() {

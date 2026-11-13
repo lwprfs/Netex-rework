@@ -61,14 +61,20 @@
   }, { passive: true });
 
   function updateTotals() {
-    var el = document.getElementById('netTotals');
-    if (!el) return;
-    if (totalCount === 0) { el.classList.remove('show'); return; }
-    el.classList.add('show');
-    document.getElementById('netTotalsCount').textContent =
+    document.getElementById('netTotalsCount').textContent = totalCount === 0 ? '' :
       totalCount + ' request' + (totalCount === 1 ? '' : 's');
-    document.getElementById('netTotalsSize').textContent = formatSize(totalBytes);
+    document.getElementById('netTotalsSize').textContent = totalCount === 0 ? '' : formatSize(totalBytes);
   }
+
+  function setHarState(state) {
+    var btn = document.getElementById('harBtn');
+    btn.className = 'har-btn' + (state === 'idle' ? '' : ' ' + state);
+    btn.textContent = state === 'recording' ? '● REC' : state === 'paused' ? '❚❚ HAR' : 'HAR';
+  }
+
+  document.getElementById('harBtn').addEventListener('click', function () {
+    try { AndroidPanel.postMessage(JSON.stringify({ type: 'har-menu' })); } catch (e) {}
+  });
 
   function clearNetwork() {
     var tab = document.getElementById('network-tab');
@@ -416,6 +422,7 @@
     setActiveTab: setActiveTab,
     setSource: setSource,
     clearNetwork: clearNetwork,
+    setHarState: setHarState,
     appendNetworkRow: appendNetworkRow,
     deliverBlob: deliverBlob,
     appendConsoleEntry: appendConsoleEntry,

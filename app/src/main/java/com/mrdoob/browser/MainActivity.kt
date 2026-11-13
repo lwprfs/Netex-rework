@@ -30,6 +30,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -40,8 +41,11 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
+import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewFeature
 import com.mrdoob.browser.databinding.ActivityMainBinding
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -72,14 +76,24 @@ class MainActivity : AppCompatActivity() {
     private val networkBridge = NetworkBridge { rid, dataUrl -> panel.deliverBlob(rid, dataUrl) }
     private val panelBridge = PanelBridge(
         onFetchBlob = { rid -> fetchBlobFromMain(rid) },
-        onEval = { evalId, source -> evalInPage(evalId, source) }
+        onEval = { evalId, source -> evalInPage(evalId, source) },
+        onHarMenu = { runOnUiThread { showHarSheet() } }
     )
+    private val saveHarAs = registerForActivityResult(
+        ActivityResultContracts.CreateDocument(HarExporter.MIME_SAVE)
+    ) { uri ->
+        if (uri != null) lifecycleScope.launch { HarExporter.saveTo(this@MainActivity, uri) }
+    }
 
     private lateinit var documentStartScript: String
     private var docStartInjectionAvailable: Boolean = false
     private var progressAnimator: Animator? = null
     private var progressClip: ClipDrawable? = null
     private var imeWasOpen = false
+
+    private var desktopMode = false
+    private lateinit var mobileUserAgent: String
+    private var desktopViewportScript: ScriptHandler? = null
 
     private var currentUrl: String = BLANK_URL
     private var currentTitle: String? = null
@@ -111,6 +125,8 @@ class MainActivity : AppCompatActivity() {
             WindowInsetsCompat.CONSUMED
         }
 
+        HarRecorder.init(applicationContext)
+        desktopMode = DesktopMode.isEnabled(this)
         documentStartScript = DocumentStartScripts.load(this)
         extensionRouter.bindPageView(binding.webView)
         extensionRouter.bindPanelView(binding.threePanelView)
@@ -120,9 +136,11 @@ class MainActivity : AppCompatActivity() {
         setupThreeJsPanel(this, binding.threePanelView, panelExtensionBridge)
         observeDetectionState()
         observeNetworkLog()
+        observeHarState()
         observeConsoleLog()
         wireUrlBar()
         wirePanelHeader()
+        binding.menuButton.setOnClickListener { showToolsSheet() }
         installBackHandler()
         setupDragHandler()
         updateTabStyles()
@@ -238,9 +256,10 @@ class MainActivity : AppCompatActivity() {
         settings.setSupportZoom(true)
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
-        settings.userAgentString = settings.userAgentString
+        mobileUserAgent = settings.userAgentString
             .replace("; wv", "")
             .replace(" wv", "") + " Netex/0.1"
+        applyDesktopMode()
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
@@ -266,6 +285,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
                 syncUrlBar(url)
+                HarRecorder.onPageVisited(url)
+                CookieTools.rememberSite(applicationContext, url)
                 // SPA route changes (history.pushState) skip onPageFinished — keep source honest.
                 sourceDirty = true
                 maybeRefreshSource()
@@ -285,6 +306,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onReceivedTitle(view: WebView, title: String?) {
                 currentTitle = title
+                HarRecorder.onPageTitle(title)
                 if (!binding.urlBar.hasFocus()) setUrlBarText(currentDisplay())
             }
 
@@ -408,6 +430,59 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun observeHarState() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                HarRecorder.status.map { it.state }.distinctUntilChanged().collect { state ->
+                    panel.setHarState(state)
+                    tintMenuButton(state)
+                }
+            }
+        }
+    }
+
+    private fun tintMenuButton(state: HarRecorder.State) {
+        when (state) {
+            HarRecorder.State.RECORDING -> binding.menuButton.setColorFilter(0xFFE53935.toInt())
+            HarRecorder.State.PAUSED -> binding.menuButton.setColorFilter(0xFFFBC02D.toInt())
+            HarRecorder.State.IDLE -> binding.menuButton.clearColorFilter()
+        }
+    }
+
+    private fun showToolsSheet() {
+        ToolsSheet(
+            activity = this,
+            desktopMode = desktopMode,
+            onDesktopMode = { setDesktopMode(it) },
+            onCookies = { CookieSheet(this, currentUrl).show() },
+            onHar = { showHarSheet() }
+        ).show()
+    }
+
+    private fun applyDesktopMode() {
+        binding.webView.settings.userAgentString =
+            if (desktopMode) DesktopMode.userAgent(mobileUserAgent) else mobileUserAgent
+        desktopViewportScript?.remove()
+        desktopViewportScript = null
+        if (desktopMode && docStartInjectionAvailable) {
+            desktopViewportScript = WebViewCompat.addDocumentStartJavaScript(
+                binding.webView, DesktopMode.VIEWPORT_SCRIPT, setOf("*")
+            )
+        }
+    }
+
+    private fun setDesktopMode(enabled: Boolean) {
+        if (enabled == desktopMode) return
+        desktopMode = enabled
+        DesktopMode.setEnabled(this, enabled)
+        applyDesktopMode()
+        binding.webView.reload()
+    }
+
+    private fun showHarSheet() {
+        HarSheet(this) { name -> saveHarAs.launch(name) }.show()
     }
 
     private fun observeConsoleLog() {

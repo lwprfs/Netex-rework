@@ -50,12 +50,47 @@
     ns.blobs.set(rid, blob);
   }
 
-  function postPending(method, url, requestId, duration, size) {
-    post({
+  // Extra request-side data used only for HAR export.
+  function headerPairs(h) {
+    var out = [];
+    try {
+      if (!h) return out;
+      var hs = (typeof Headers !== 'undefined' && h instanceof Headers) ? h : new Headers(h);
+      hs.forEach(function (v, k) { out.push([k, v]); });
+    } catch (e) { /* ignore */ }
+    return out;
+  }
+
+  function parseRawHeaders(raw) {
+    var out = [];
+    (raw || '').trim().split(/[\r\n]+/).forEach(function (line) {
+      var i = line.indexOf(':');
+      if (i > 0) out.push([line.slice(0, i).trim(), line.slice(i + 1).trim()]);
+    });
+    return out;
+  }
+
+  function bodyText(b) {
+    if (typeof b === 'string') return clip(b);
+    try {
+      if (typeof URLSearchParams !== 'undefined' && b instanceof URLSearchParams) return clip(b.toString());
+    } catch (e) { /* ignore */ }
+    return '';
+  }
+
+  function withReq(record, req) {
+    record.started = req.started;
+    record.reqHeaders = req.headers;
+    record.reqBody = req.body;
+    return record;
+  }
+
+  function postPending(method, url, requestId, duration, size, req) {
+    post(withReq({
       method: method.toUpperCase(), url: url, status: 0, body: '',
       contentType: '', duration: duration, size: size,
       requestId: requestId, pending: true
-    });
+    }, req));
   }
 
   ns.readBlob = function (rid) {
@@ -100,13 +135,19 @@
       var method = (init && init.method) || (input && input.method) || 'GET';
       var requestId = newRequestId();
       var start = Date.now();
-      postPending(method, url, requestId, 0, 0);
+      var req = {
+        started: start,
+        headers: headerPairs(init && init.headers ? init.headers : input && input.headers),
+        body: bodyText(init && init.body)
+      };
+      postPending(method, url, requestId, 0, 0, req);
       var promise = origFetch.apply(this, arguments);
       promise.then(function (response) {
         var ct = response.headers.get('content-type') || '';
         var lenHeader = parseLen(response.headers.get('content-length'));
+        var resHeaders = headerPairs(response.headers);
         var emit = function (body, size) {
-          post({
+          var rec = withReq({
             method: method.toUpperCase(),
             url: url,
             status: response.status,
@@ -115,7 +156,9 @@
             duration: Date.now() - start,
             size: size || 0,
             requestId: requestId
-          });
+          }, req);
+          rec.resHeaders = resHeaders;
+          post(rec);
         };
         if (isBinaryDisplayable(ct)) {
           response.clone().blob()
@@ -127,7 +170,7 @@
             .catch(function () {});
         }
       }).catch(function (err) {
-        post({
+        post(withReq({
           method: method.toUpperCase(),
           url: url,
           status: 0,
@@ -136,7 +179,7 @@
           duration: Date.now() - start,
           requestId: requestId,
           error: String(err)
-        });
+        }, req));
       });
       return promise;
     };
@@ -185,7 +228,8 @@
           contentType: ct,
           duration: Math.round(entry.duration || 0),
           size: entry.decodedBodySize || entry.encodedBodySize || 0,
-          requestId: ''
+          requestId: '',
+          started: Math.round((performance.timeOrigin || 0) + entry.startTime)
         });
       });
     });
@@ -204,20 +248,26 @@
       this._netUrl = url;
       return origOpen.apply(this, arguments);
     };
-    XHR.prototype.send = function () {
+    var origSetHeader = XHR.prototype.setRequestHeader;
+    XHR.prototype.setRequestHeader = function (k, v) {
+      (this._netHeaders || (this._netHeaders = [])).push([k, v]);
+      return origSetHeader.apply(this, arguments);
+    };
+    XHR.prototype.send = function (sendBody) {
       var xhr = this;
       var method = xhr._netMethod || 'GET';
       var url = xhr._netUrl || '';
       var requestId = newRequestId();
       var start = Date.now();
-      postPending(method, url, requestId, 0, 0);
+      var req = { started: start, headers: xhr._netHeaders || [], body: bodyText(sendBody) };
+      postPending(method, url, requestId, 0, 0, req);
       // Throttle to ~4/s so big downloads (e.g. 12 MB STL) don't flood the bridge.
       var lastProg = 0;
       xhr.addEventListener('progress', function (e) {
         var now = Date.now();
         if (now - lastProg < 250) return;
         lastProg = now;
-        postPending(method, url, requestId, now - start, e.loaded || 0);
+        postPending(method, url, requestId, now - start, e.loaded || 0, req);
       });
       xhr.addEventListener('loadend', function () {
         var ct = xhr.getResponseHeader('content-type') || '';
@@ -226,7 +276,7 @@
         if (!isBinaryDisplayable(ct)) {
           try { body = xhr.responseText || ''; } catch (e) {}
         }
-        post({
+        var rec = withReq({
           method: method.toUpperCase(),
           url: url,
           status: xhr.status,
@@ -235,7 +285,9 @@
           duration: Date.now() - start,
           size: lenHeader || body.length || 0,
           requestId: requestId
-        });
+        }, req);
+        rec.resHeaders = parseRawHeaders(xhr.getAllResponseHeaders());
+        post(rec);
       });
       return origSend.apply(this, arguments);
     };

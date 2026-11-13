@@ -1,5 +1,6 @@
 package com.mrdoob.browser
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 private const val TAG = "NetworkBridge"
@@ -30,8 +31,22 @@ class NetworkBridge(
                 durationMs = obj.optLong("duration"),
                 sizeBytes = obj.optLong("size"),
                 requestId = obj.optString("requestId").takeIf { it.isNotEmpty() },
-                pending = obj.optBoolean("pending", false)
+                pending = obj.optBoolean("pending", false),
+                startedAt = obj.optLong("started"),
+                requestHeaders = pairs(obj.optJSONArray("reqHeaders")),
+                responseHeaders = pairs(obj.optJSONArray("resHeaders")),
+                requestBody = obj.optString("reqBody")
             )
         )
+    }
+
+    private fun pairs(arr: JSONArray?): List<Pair<String, String>> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<Pair<String, String>>(arr.length())
+        for (i in 0 until arr.length()) {
+            val p = arr.optJSONArray(i) ?: continue
+            out += p.optString(0) to p.optString(1)
+        }
+        return out
     }
 }

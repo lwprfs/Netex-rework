@@ -38,8 +38,12 @@ The repo IS the gradle project — `build.gradle.kts`, `settings.gradle.kts`,
 
 ## Build and install
 
-We always install directly on a USB-connected phone via `adb`. There is no
-emulator or CI.
+We install directly on a USB-connected phone via `adb`. There is no emulator;
+`.github/workflows/ci.yml` runs on every push: it uploads a debug APK and, when
+the signing secrets exist (`KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
+`KEY_PASSWORD`), a signed release APK. `app/build.gradle.kts` reads the keystore
+from env vars (`KEYSTORE_PATH` + the three above) and falls back to the debug
+key when they're absent.
 
 ```sh
 ./gradlew :app:installDebug
@@ -137,6 +141,25 @@ place so live byte counters tick instead of appearing only at the end.
 (`FileReader.readAsDataURL`) only happens when the user expands a row in
 the panel — eager encoding blocked the UI. The lookup walks iframes
 recursively because `evaluateJavascript` only runs in the top frame.
+
+**Tools menu**: the ⋮ button in the chrome bar opens `ToolsSheet` (Desktop site
+switch, Cookies, HAR). It turns red/amber while HAR is recording/paused.
+`DesktopMode` swaps the user agent for a desktop Chrome one and, via a second
+document-start script, pins the viewport to 1024px (WebView otherwise honours
+`width=device-width`). `CookieSheet` / `CookieTools` wrap `CookieManager`, which
+can only list cookies per URL (name+value), so sites are looked up one at a
+time and visited hosts are remembered as chips.
+
+**HAR recording**: `HarSheet` (also reachable from the Network tab's `HAR`
+button, which posts `har-menu` through `PanelBridge`) has Start / Pause·Resume /
+Share / Save / File manager / Clear. `NetworkLog.add`
+also feeds `HarRecorder`, a process-wide session that is *not* cleared on
+navigation (the Network tab is). Start always begins a new file; pausing only
+blocks new requests. The session is mirrored to `cacheDir/har/<name>.har` on a
+serial thread; `HarBuilder` writes HAR 1.2 and names files `host_path` (one
+page) or `host,page,page` (several). `HarExporter` handles share (FileProvider),
+save (MediaStore Downloads/Netex) and the system save-as picker. The shim sends
+request headers/body and start time only for this.
 
 **Three.js panel external links**: `target="_blank"` anchors (e.g.
 the feedback `+`) go through `onCreateWindow`, which assigns a transient
