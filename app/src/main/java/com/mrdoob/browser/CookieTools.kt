@@ -4,6 +4,11 @@ import android.content.Context
 import android.net.Uri
 import android.webkit.CookieManager
 
+/**
+ * Thin wrapper over [CookieManager]. The WebView API can't enumerate every stored cookie, only
+ * the ones that would be sent to a given URL (name + value, no attributes) — so cookies are
+ * always looked up per site, and visited sites are remembered to make switching easy.
+ */
 object CookieTools {
 
     data class Cookie(val name: String, val value: String)
@@ -12,6 +17,7 @@ object CookieTools {
     private const val KEY_SITES = "cookie_sites"
     private const val MAX_SITES = 30
 
+    /** `example.com` / `http://x.y:8080/a?b` → `https://example.com/` style URL; null if unusable. */
     fun normalizeSite(input: String): String? {
         val t = input.trim()
         if (t.isEmpty() || t.contains(' ')) return null
@@ -29,6 +35,7 @@ object CookieTools {
         .filter { it.isNotEmpty() }
         .map { Cookie(it.substringBefore('='), it.substringAfter('=', "")) }
 
+    /** Host-only cookie for [url]'s host. [days] null = session cookie. [done] runs once it's stored. */
     fun add(
         url: String, name: String, value: String, path: String,
         days: Int?, secure: Boolean, httpOnly: Boolean, done: () -> Unit
@@ -44,10 +51,13 @@ object CookieTools {
         }
     }
 
+    /**
+     * The API can't tell us a cookie's Path/Domain, so expire every plausible variant
+     * (each path prefix of the URL × host-only / host / .host / parent domains).
+     */
     fun delete(url: String, name: String, done: () -> Unit) {
         val u = Uri.parse(url)
-        val host = u.host
-        if (host == null) {
+        val host: String = u.host ?: run {
             done()
             return
         }
@@ -58,7 +68,7 @@ object CookieTools {
             paths += acc
         }
         val domains = mutableListOf<String?>(null)
-        var h = host
+        var h: String = host
         while (h.contains('.')) {
             domains += h
             domains += ".$h"
@@ -93,6 +103,8 @@ object CookieTools {
             done()
         }
     }
+
+    // --- visited sites (most recent first) -------------------------------------------------
 
     fun sites(context: Context): List<String> = context
         .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
