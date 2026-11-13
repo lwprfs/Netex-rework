@@ -4,7 +4,10 @@ import android.animation.Animator
 import android.animation.AnimatorSet
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.res.Configuration
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Color
@@ -25,6 +28,8 @@ import android.webkit.ConsoleMessage
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.CookieManager
+import android.webkit.WebStorage
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -43,6 +48,8 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewFeature
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.tabs.TabLayout
 import com.mrdoob.browser.databinding.ActivityMainBinding
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -77,7 +84,8 @@ class MainActivity : AppCompatActivity() {
     private val panelBridge = PanelBridge(
         onFetchBlob = { rid -> fetchBlobFromMain(rid) },
         onEval = { evalId, source -> evalInPage(evalId, source) },
-        onHarMenu = { runOnUiThread { showHarSheet() } }
+        onHarMenu = { runOnUiThread { showHarSheet() } },
+        onCopy = { text -> runOnUiThread { copyToClipboard(text, "Copied") } }
     )
     private val saveHarAs = registerForActivityResult(
         ActivityResultContracts.CreateDocument(HarExporter.MIME_SAVE)
@@ -90,6 +98,9 @@ class MainActivity : AppCompatActivity() {
     private var progressAnimator: Animator? = null
     private var progressClip: ClipDrawable? = null
     private var imeWasOpen = false
+    private var loading = false
+    private var panelAnimator: ValueAnimator? = null
+    private var lastPanelOpen = false
 
     private var desktopMode = false
     private lateinit var mobileUserAgent: String
@@ -140,13 +151,18 @@ class MainActivity : AppCompatActivity() {
         observeConsoleLog()
         wireUrlBar()
         wirePanelHeader()
+        wireNavigation()
         binding.menuButton.setOnClickListener { showToolsSheet() }
         installBackHandler()
         setupDragHandler()
-        updateTabStyles()
+        binding.webView.roundCorners(22)
+        binding.panelView.roundCorners(18)
+        binding.threePanelView.roundCorners(18)
+        updateNavState()
+        updateSecurityIcon()
         // Reserve the edge-adjacent chrome buttons from Android's back-gesture region,
         // otherwise a tap near the screen edge gets swallowed as a back swipe.
-        excludeFromSystemGestures(binding.panelReload)
+        excludeFromSystemGestures(binding.navBack)
         excludeFromSystemGestures(binding.threeLogoButton)
 
         if (savedInstanceState != null) {
@@ -160,6 +176,14 @@ class MainActivity : AppCompatActivity() {
                 focusUrlBar()
             }
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        binding.webView.setBackgroundColor(
+            binding.webView.materialColor(com.google.android.material.R.attr.colorSurfaceContainerLowest)
+        )
+        panel.applyTheme()
     }
 
     override fun onPause() {
@@ -250,7 +274,7 @@ class MainActivity : AppCompatActivity() {
         settings.databaseEnabled = true
         settings.loadWithOverviewMode = true
         settings.useWideViewPort = true
-        settings.textZoom = 100
+        settings.textZoom = BrowserPrefs.textZoom(this)
         settings.mediaPlaybackRequiresUserGesture = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
@@ -275,6 +299,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                setLoading(true)
                 DetectionStore.reset()
                 NetworkLog.reset()
                 ConsoleLog.reset()
@@ -289,12 +314,15 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageFinished(view: WebView, url: String?) {
+                setLoading(false)
+                updateNavState()
                 sourceDirty = true
                 maybeRefreshSource()
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
                 syncUrlBar(url)
+                updateNavState()
                 HarRecorder.onPageVisited(url)
                 CookieTools.rememberSite(applicationContext, url)
                 // SPA route changes (history.pushState) skip onPageFinished — keep source honest.
@@ -311,6 +339,7 @@ class MainActivity : AppCompatActivity() {
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
+                setLoading(newProgress in 0..99)
                 setUrlBubbleProgress(newProgress)
             }
 
@@ -454,21 +483,88 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun tintMenuButton(state: HarRecorder.State) {
-        when (state) {
-            HarRecorder.State.RECORDING -> binding.menuButton.setColorFilter(0xFFE53935.toInt())
-            HarRecorder.State.PAUSED -> binding.menuButton.setColorFilter(0xFFFBC02D.toInt())
-            HarRecorder.State.IDLE -> binding.menuButton.clearColorFilter()
+        val color = when (state) {
+            HarRecorder.State.RECORDING -> R.color.nx_rec
+            HarRecorder.State.PAUSED -> R.color.nx_paused
+            HarRecorder.State.IDLE -> null
+        }
+        if (color == null) {
+            binding.recBadge.visibility = View.GONE
+        } else {
+            binding.recBadge.backgroundTintList =
+                android.content.res.ColorStateList.valueOf(androidx.core.content.ContextCompat.getColor(this, color))
+            binding.recBadge.visibility = View.VISIBLE
         }
     }
 
     private fun showToolsSheet() {
-        ToolsSheet(
-            activity = this,
-            desktopMode = desktopMode,
-            onDesktopMode = { setDesktopMode(it) },
-            onCookies = { CookieSheet(this, currentUrl).show() },
-            onHar = { showHarSheet() }
-        ).show()
+        ToolsSheet(this, object : ToolsHost {
+            override val isDesktopMode: Boolean get() = desktopMode
+            override val currentTextZoom: Int get() = BrowserPrefs.textZoom(this@MainActivity)
+            override val pageUrl: String get() = currentUrl
+            override fun changeDesktopMode(on: Boolean) = setDesktopMode(on)
+            override fun changeTextZoom(percent: Int) {
+                BrowserPrefs.setTextZoom(this@MainActivity, percent)
+                binding.webView.settings.textZoom = percent
+            }
+            override fun sharePage() = this@MainActivity.sharePage()
+            override fun copyLink() {
+                if (hasPage()) copyToClipboard(currentUrl, "Link copied")
+            }
+            override fun openExternal() = this@MainActivity.openExternal()
+            override fun hardReload() {
+                binding.webView.clearCache(true)
+                binding.webView.reload()
+            }
+            override fun openCookies() { CookieSheet(this@MainActivity, currentUrl).show() }
+            override fun openHar() = showHarSheet()
+            override fun clearBrowsingData() = confirmClearBrowsingData()
+        }).show()
+    }
+
+    private fun hasPage(): Boolean = currentUrl.isNotEmpty() && currentUrl != BLANK_URL
+
+    private fun copyToClipboard(text: String, message: String) {
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("Netex", text))
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun sharePage() {
+        if (!hasPage()) return
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, currentUrl)
+            currentTitle?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
+        }
+        startActivity(Intent.createChooser(send, "Share page"))
+    }
+
+    private fun openExternal() {
+        if (!hasPage()) return
+        try {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl)), "Open with"))
+        } catch (_: Exception) {
+            Toast.makeText(this, "No app can open this", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun confirmClearBrowsingData() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Clear browsing data?")
+            .setMessage("This removes cache, cookies, site storage and history, and signs you out of sites.")
+            .setPositiveButton("Clear") { _, _ ->
+                binding.webView.clearCache(true)
+                binding.webView.clearHistory()
+                WebStorage.getInstance().deleteAllData()
+                CookieManager.getInstance().removeAllCookies(null)
+                CookieManager.getInstance().flush()
+                updateNavState()
+                Toast.makeText(this, "Browsing data cleared", Toast.LENGTH_SHORT).show()
+                if (hasPage()) binding.webView.reload()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun applyDesktopMode() {
@@ -534,28 +630,80 @@ class MainActivity : AppCompatActivity() {
         }
         binding.urlBar.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
+                binding.securityIcon.setImageResource(R.drawable.ic_search)
                 binding.urlBar.setText(if (currentUrl == BLANK_URL) "" else currentUrl)
                 // Wait until ACTION_UP's cursor placement settles, otherwise it clears the selection.
                 binding.urlBar.post { binding.urlBar.selectAll() }
             } else {
+                updateSecurityIcon()
                 setUrlBarText(currentDisplay())
             }
         }
-        val dismissUrlEditing = View.OnClickListener {
-            if (binding.urlBar.hasFocus()) {
-                binding.urlBar.clearFocus()
-                hideKeyboard(binding.urlBar)
-            }
+    }
+
+    private fun dismissUrlEditing() {
+        if (binding.urlBar.hasFocus()) {
+            binding.urlBar.clearFocus()
+            hideKeyboard(binding.urlBar)
         }
-        binding.threeLogoButton.setOnClickListener(dismissUrlEditing)
+    }
+
+    private fun wireNavigation() {
+        binding.navBack.setOnClickListener { if (binding.webView.canGoBack()) binding.webView.goBack() }
+        binding.navForward.setOnClickListener { if (binding.webView.canGoForward()) binding.webView.goForward() }
+        binding.navDevtools.setOnClickListener { togglePanel() }
+        binding.dragHandle.setOnClickListener { togglePanel() }
+        binding.panelReload.setOnClickListener {
+            if (loading) binding.webView.stopLoading() else binding.webView.reload()
+        }
+        binding.threeLogoButton.setOnClickListener {
+            dismissUrlEditing()
+            openPanelTab(PanelRenderer.Tab.THREEJS)
+        }
+    }
+
+    private fun updateNavState() {
+        val back = binding.webView.canGoBack()
+        val fwd = binding.webView.canGoForward()
+        binding.navBack.isEnabled = back
+        binding.navBack.alpha = if (back) 1f else 0.35f
+        binding.navForward.isEnabled = fwd
+        binding.navForward.alpha = if (fwd) 1f else 0.35f
+    }
+
+    private fun setLoading(on: Boolean) {
+        if (on == loading) return
+        loading = on
+        binding.panelReload.setImageResource(if (on) R.drawable.ic_close else R.drawable.ic_refresh)
+        binding.panelReload.contentDescription = if (on) "Stop" else "Reload"
+    }
+
+    private fun updateSecurityIcon() {
+        val (icon, label) = when {
+            currentUrl.startsWith("https://") -> R.drawable.ic_lock to "Secure connection"
+            currentUrl.startsWith("http://") -> R.drawable.ic_warning to "Not secure"
+            else -> R.drawable.ic_search to "Search"
+        }
+        binding.securityIcon.setImageResource(icon)
+        binding.securityIcon.contentDescription = label
     }
 
     private fun wirePanelHeader() {
-        binding.tabConsole.setOnClickListener { switchTab(PanelRenderer.Tab.CONSOLE) }
-        binding.tabSource.setOnClickListener { switchTab(PanelRenderer.Tab.SOURCE) }
-        binding.tabNetwork.setOnClickListener { switchTab(PanelRenderer.Tab.NETWORK) }
-        binding.tabThreejs.setOnClickListener { switchTab(PanelRenderer.Tab.THREEJS) }
-        binding.panelReload.setOnClickListener { binding.webView.reload() }
+        binding.panelTabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) {
+                switchTab(PanelRenderer.Tab.entries[tab.position])
+            }
+            override fun onTabUnselected(tab: TabLayout.Tab) {}
+            override fun onTabReselected(tab: TabLayout.Tab) {}
+        })
+        binding.panelClear.setOnClickListener {
+            when (currentTab) {
+                PanelRenderer.Tab.CONSOLE -> ConsoleLog.reset()
+                PanelRenderer.Tab.NETWORK -> NetworkLog.reset()
+                else -> Unit
+            }
+        }
+        binding.panelClose.setOnClickListener { animatePanelTo(0) }
     }
 
     private fun excludeFromSystemGestures(view: View) {
@@ -568,21 +716,13 @@ class MainActivity : AppCompatActivity() {
     private fun switchTab(tab: PanelRenderer.Tab) {
         if (tab == currentTab) return
         currentTab = tab
-        updateTabStyles()
+        binding.panelClear.visibility =
+            if (tab == PanelRenderer.Tab.CONSOLE || tab == PanelRenderer.Tab.NETWORK) View.VISIBLE else View.INVISIBLE
         val showThreeJs = tab == PanelRenderer.Tab.THREEJS
         binding.panelView.visibility = if (showThreeJs) View.GONE else View.VISIBLE
         binding.threePanelView.visibility = if (showThreeJs) View.VISIBLE else View.GONE
         if (!showThreeJs) panel.setTab(tab)
         if (tab == PanelRenderer.Tab.SOURCE) maybeRefreshSource()
-    }
-
-    private fun updateTabStyles() {
-        val active = binding.root.materialColor(com.google.android.material.R.attr.colorOnSurface)
-        val inactive = binding.root.materialColor(com.google.android.material.R.attr.colorOnSurfaceVariant)
-        binding.tabConsole.setTextColor(if (currentTab == PanelRenderer.Tab.CONSOLE) active else inactive)
-        binding.tabSource.setTextColor(if (currentTab == PanelRenderer.Tab.SOURCE) active else inactive)
-        binding.tabNetwork.setTextColor(if (currentTab == PanelRenderer.Tab.NETWORK) active else inactive)
-        binding.tabThreejs.setTextColor(if (currentTab == PanelRenderer.Tab.THREEJS) active else inactive)
     }
 
     private fun hideKeyboard(view: View) {
@@ -605,12 +745,15 @@ class MainActivity : AppCompatActivity() {
     private fun syncUrlBar(url: String?) {
         val safe = url.orEmpty()
         if (safe.isNotEmpty()) currentUrl = safe
+        if (!binding.urlBar.hasFocus()) updateSecurityIcon()
         if (!binding.urlBar.hasFocus()) setUrlBarText(currentDisplay())
     }
 
     private fun currentDisplay(): String {
-        currentTitle?.takeIf { it.isNotBlank() && it != BLANK_URL }?.let { return it }
         if (currentUrl.isEmpty() || currentUrl == BLANK_URL) return getString(R.string.new_tab)
+        val host = Uri.parse(currentUrl).host?.removePrefix("www.")
+        if (!host.isNullOrEmpty()) return host
+        currentTitle?.takeIf { it.isNotBlank() && it != BLANK_URL }?.let { return it }
         return getString(R.string.loading)
     }
 
@@ -707,20 +850,52 @@ class MainActivity : AppCompatActivity() {
     private fun setupDragHandler() {
         var startHeight = 0
         val onStart: () -> Unit = {
+            panelAnimator?.cancel()
             startHeight = binding.bottomPanel.layoutParams.height
         }
-        // Y axis grows downward → up-drag has negative dy → panel grows.
-        // The page WebView keeps a minimum height — collapsed to zero, pages
-        // see a zero-sized viewport (WebGPU swapchains reject it outright).
-        val minPageHeight = (96 * resources.displayMetrics.density).toInt()
+        // Y axis grows downward -> up-drag has negative dy -> panel grows.
         val onMove: (Float) -> Unit = { dy ->
-            val maxPanel = binding.root.height - binding.chromeContainer.height - minPageHeight
-            setPanelHeight((startHeight - dy.toInt()).coerceIn(0, maxPanel.coerceAtLeast(0)))
+            setPanelHeight((startHeight - dy.toInt()).coerceIn(0, maxPanelHeight()))
         }
-        val onEnd: (Float) -> Unit = { /* stay where released */ }
+        // A barely-open panel snaps shut; otherwise it stays where released.
+        val onEnd: (Float) -> Unit = {
+            val h = binding.bottomPanel.layoutParams.height
+            if (h in 1 until dp(72)) animatePanelTo(0)
+        }
         binding.chromeContainer.onDragStart = onStart
         binding.chromeContainer.onDragMove = onMove
         binding.chromeContainer.onDragEnd = onEnd
+    }
+
+    // The page WebView keeps a minimum height: collapsed to zero, pages see a
+    // zero-sized viewport (WebGPU swapchains reject it outright).
+    private fun maxPanelHeight(): Int {
+        val minPageHeight = dp(96)
+        return (binding.root.height - binding.chromeContainer.height - minPageHeight).coerceAtLeast(0)
+    }
+
+    private fun isPanelOpen(): Boolean = binding.bottomPanel.layoutParams.height > 0
+
+    private fun togglePanel() {
+        if (isPanelOpen()) animatePanelTo(0)
+        else animatePanelTo(minOf(maxPanelHeight(), (binding.root.height * 0.5f).toInt()))
+    }
+
+    private fun openPanelTab(tab: PanelRenderer.Tab) {
+        if (!isPanelOpen()) togglePanel()
+        binding.panelTabs.getTabAt(tab.ordinal)?.select()
+    }
+
+    private fun animatePanelTo(target: Int) {
+        panelAnimator?.cancel()
+        val from = binding.bottomPanel.layoutParams.height
+        if (from == target) return
+        panelAnimator = ValueAnimator.ofInt(from, target).apply {
+            duration = 240L
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { setPanelHeight(it.animatedValue as Int) }
+            start()
+        }
     }
 
     private fun setPanelHeight(h: Int) {
@@ -730,6 +905,13 @@ class MainActivity : AppCompatActivity() {
         val wasClosed = params.height == 0
         params.height = h
         p.layoutParams = params
+        val open = h > 0
+        if (open != lastPanelOpen) {
+            lastPanelOpen = open
+            if (open) binding.navDevtools.setColorFilter(
+                binding.navDevtools.materialColor(com.google.android.material.R.attr.colorPrimary)
+            ) else binding.navDevtools.clearColorFilter()
+        }
         if (wasClosed && h > 0 && currentTab == PanelRenderer.Tab.SOURCE) maybeRefreshSource()
     }
 

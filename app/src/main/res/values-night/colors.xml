@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Netex palette (dark) -->
+    <color name="nx_primary">#C0C1FF</color>
+    <color name="nx_on_primary">#1A1A8C</color>
+    <color name="nx_primary_container">#3A38B8</color>
+    <color name="nx_on_primary_container">#E1E0FF</color>
+    <color name="nx_secondary">#C4C5DD</color>
+    <color name="nx_on_secondary">#2D2F42</color>
+    <color name="nx_secondary_container">#434559</color>
+    <color name="nx_on_secondary_container">#E0E1F9</color>
+    <color name="nx_tertiary">#6CD9C6</color>
+    <color name="nx_on_tertiary">#00382F</color>
+    <color name="nx_tertiary_container">#005046</color>
+    <color name="nx_on_tertiary_container">#8EF5E0</color>
+    <color name="nx_error">#FFB4AB</color>
+    <color name="nx_on_error">#690005</color>
+    <color name="nx_error_container">#93000A</color>
+    <color name="nx_on_error_container">#FFDAD6</color>
+    <color name="nx_surface">#121318</color>
+    <color name="nx_on_surface">#E4E1E9</color>
+    <color name="nx_surface_variant">#46464F</color>
+    <color name="nx_on_surface_variant">#C7C5D0</color>
+    <color name="nx_outline">#918F9A</color>
+    <color name="nx_outline_variant">#46464F</color>
+    <color name="nx_container_lowest">#0C0D12</color>
+    <color name="nx_container_low">#1A1B21</color>
+    <color name="nx_container">#1E1F25</color>
+    <color name="nx_container_high">#292A30</color>
+    <color name="nx_container_highest">#34353B</color>
+
+    <color name="nx_rec">#FF6B66</color>
+    <color name="nx_paused">#FFCA4D</color>
+    <color name="nx_idle">#8A8A93</color>
+    <color name="nx_ok">#5FD08A</color>
+</resources>

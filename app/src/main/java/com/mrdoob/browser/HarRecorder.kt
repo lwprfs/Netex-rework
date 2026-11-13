@@ -1,6 +1,7 @@
 package com.mrdoob.browser
 
 import android.content.Context
+import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -18,6 +19,9 @@ import java.util.concurrent.Executors
  * Records [NetworkLog] traffic into a HAR session that survives page navigations
  * (the Network tab itself is cleared on every navigation, the recording is not).
  *
+ * What ends up in the session is controlled by [HarOptions]: request types, body and
+ * header detail, MB limits, privacy filters and session caps.
+ *
  * The session is mirrored to `cacheDir/har/<name>.har`. All file work runs on one
  * serial thread, so writes and deletes can never interleave.
  */
@@ -29,16 +33,21 @@ object HarRecorder {
         val state: State = State.IDLE,
         val entries: Int = 0,
         val pages: Int = 0,
-        val fileName: String? = null
+        val fileName: String? = null,
+        /** Approximate size of stored bodies, and the configured cap for it. */
+        val bytes: Long = 0,
+        val maxBytes: Long = 0,
+        val maxEntries: Int = 0,
+        /** True when "stop when full" paused the session. */
+        val full: Boolean = false
     )
 
     data class Page(val id: String, val key: String, val url: String, val startedAt: Long, val title: String)
     data class Entry(val record: NetworkLog.Record, val pageId: String?, val startedAt: Long)
     class Snapshot(val pages: List<Page>, val entries: List<Entry>)
 
-    private const val MAX_ENTRIES = 3000
-    private const val MAX_CHARS = 24_000_000L // cap on stored body text, keeps long sessions from OOMing
     private const val FLUSH_DELAY_MS = 3000L
+    private val SECOND_LEVEL = setOf("co", "com", "org", "net", "gov", "edu", "ac", "or", "ne", "go")
 
     val isRecording: Boolean get() = state == State.RECORDING
 
@@ -56,6 +65,7 @@ object HarRecorder {
     private val entries = LinkedHashMap<String, Entry>()
     private var totalChars = 0L
     private var seq = 0
+    private var full = false
     private var currentUrl: String? = null // latest page, tracked even while not recording
     private var currentKey: String? = null
     private var flushJob: Job? = null
@@ -87,6 +97,7 @@ object HarRecorder {
                 State.RECORDING -> state = State.PAUSED
                 State.PAUSED -> {
                     state = State.RECORDING
+                    full = false
                     currentUrl?.let { registerPage(it) }
                 }
                 State.IDLE -> return
@@ -94,6 +105,16 @@ object HarRecorder {
             publish()
         }
         scheduleFlush()
+    }
+
+    /** Ends the recording but keeps what was captured so it can still be exported. */
+    fun stop() {
+        synchronized(lock) {
+            if (state == State.IDLE) return
+            state = State.IDLE
+            publish()
+        }
+        scope.launch { writeCache() }
     }
 
     /** Drops the session and deletes every cached HAR file. */
@@ -129,14 +150,21 @@ object HarRecorder {
         }
     }
 
-    fun onRecord(record: NetworkLog.Record) {
+    fun onRecord(raw: NetworkLog.Record) {
         if (state == State.IDLE) return
         synchronized(lock) {
+            val record = prepare(raw) ?: return
             val key = record.requestId ?: "n${seq++}"
             val old = entries[key]
             if (old == null) {
                 // Paused: only requests that were already in flight may still complete.
                 if (state != State.RECORDING) return
+                if (HarOptions.stopWhenFull && isFull(weight(record))) {
+                    state = State.PAUSED
+                    full = true
+                    publish()
+                    return
+                }
                 val started = if (record.startedAt > 0) record.startedAt
                 else System.currentTimeMillis() - record.durationMs
                 entries[key] = Entry(record, currentPageId(), started)
@@ -154,12 +182,96 @@ object HarRecorder {
     /** Writes the session to the cache dir right now and returns the file (null if nothing recorded). */
     suspend fun flush(): File? = withContext(io) { writeCache() }
 
+    // --- capture options -------------------------------------------------------------
+
+    /** Applies the capture-detail options to one record; null drops it from the recording. */
+    private fun prepare(r: NetworkLog.Record): NetworkLog.Record? {
+        val kind = HarOptions.Kind.from(r.kind, r.contentType)
+        if (!HarOptions.recordKind(kind)) return null
+        if (!HarOptions.thirdParty && !sameSite(r.url, currentUrl)) return null
+        if (HarOptions.isExcluded(r.url)) return null
+
+        // Response bodies.
+        var body = r.body
+        var harBody = r.harBody
+        if (r.harBase64) {
+            val isImage = kind == HarOptions.Kind.IMAGE
+            val allowed = if (isImage) HarOptions.images else HarOptions.fonts
+            val limitMb = if (isImage) HarOptions.imageLimitMb else HarOptions.fontLimitMb
+            // base64 is ~4/3 the size of the raw bytes
+            val cap = HarOptions.capChars(limitMb).toLong() * 4L / 3L
+            if (!allowed || harBody.length.toLong() > cap) harBody = ""
+            body = ""
+        } else if (!HarOptions.textBodies) {
+            body = ""
+            harBody = ""
+        } else {
+            val cap = HarOptions.capChars(HarOptions.textLimitMb)
+            if (body.length > cap) body = body.substring(0, cap)
+            if (harBody.length > cap) harBody = harBody.substring(0, cap)
+        }
+
+        // Request payload.
+        val reqBody = if (HarOptions.requestBodies) {
+            val cap = HarOptions.capChars(HarOptions.requestBodyLimitMb)
+            if (r.requestBody.length > cap) r.requestBody.substring(0, cap) else r.requestBody
+        } else ""
+
+        // Headers & cookies.
+        var reqHeaders = if (HarOptions.requestHeaders) r.requestHeaders else emptyList()
+        var resHeaders = if (HarOptions.responseHeaders) r.responseHeaders else emptyList()
+        if (!HarOptions.cookies) {
+            reqHeaders = reqHeaders.filterNot { it.first.equals("cookie", ignoreCase = true) }
+            resHeaders = resHeaders.filterNot { it.first.equals("set-cookie", ignoreCase = true) }
+        }
+        var url = r.url
+        if (HarOptions.redact) {
+            reqHeaders = Redact.headers(reqHeaders)
+            resHeaders = Redact.headers(resHeaders)
+            url = Redact.url(url)
+        }
+
+        return r.copy(
+            url = url,
+            body = body,
+            harBody = harBody,
+            harBase64 = r.harBase64 && harBody.isNotEmpty(),
+            requestBody = reqBody,
+            requestHeaders = reqHeaders,
+            responseHeaders = resHeaders,
+            timings = if (HarOptions.timings) r.timings else null
+        )
+    }
+
+    private fun sameSite(url: String, page: String?): Boolean {
+        if (page.isNullOrEmpty()) return true
+        val a = siteOf(url)
+        val b = siteOf(page)
+        return a.isEmpty() || b.isEmpty() || a == b
+    }
+
+    /** Registrable-domain-ish key: `cdn.example.com` and `www.example.com` both give `example.com`. */
+    private fun siteOf(url: String): String {
+        val host = (try { Uri.parse(url).host } catch (_: Exception) { null } ?: return "").lowercase()
+        if (host.all { it.isDigit() || it == '.' }) return host // IPv4
+        val parts = host.split('.')
+        if (parts.size <= 2) return host
+        val last = parts[parts.size - 1]
+        val second = parts[parts.size - 2]
+        val take = if (last.length == 2 && second in SECOND_LEVEL) 3 else 2
+        return parts.takeLast(take).joinToString(".")
+    }
+
+    private fun isFull(extra: Long): Boolean =
+        entries.size >= HarOptions.maxEntries || totalChars + extra > HarOptions.maxTotalBytes()
+
     // --- internals -----------------------------------------------------------------
 
     private fun resetSession() {
         pages.clear()
         entries.clear()
         totalChars = 0
+        full = false
         currentKey = null
         flushJob?.cancel()
         flushJob = null
@@ -178,8 +290,11 @@ object HarRecorder {
     private fun weight(r: NetworkLog.Record): Long = (r.body.length + r.requestBody.length + r.harBody.length).toLong()
 
     private fun evictIfNeeded() {
+        if (HarOptions.stopWhenFull) return // paused before the limit instead
+        val maxEntries = HarOptions.maxEntries
+        val maxChars = HarOptions.maxTotalBytes()
         val iter = entries.entries.iterator()
-        while ((entries.size > MAX_ENTRIES || totalChars > MAX_CHARS) && iter.hasNext()) {
+        while ((entries.size > maxEntries || totalChars > maxChars) && iter.hasNext()) {
             totalChars -= weight(iter.next().value.record)
             iter.remove()
         }
@@ -191,7 +306,11 @@ object HarRecorder {
             entries = entries.size,
             pages = pages.size,
             fileName = if (entries.isEmpty()) null
-            else HarBuilder.fileBase(pages.values.map { it.url }) + ".har"
+            else HarBuilder.fileBase(pages.values.map { it.url }) + ".har",
+            bytes = totalChars,
+            maxBytes = HarOptions.maxTotalBytes(),
+            maxEntries = HarOptions.maxEntries,
+            full = full
         )
     }
 

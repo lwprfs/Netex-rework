@@ -1,7 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Netex" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar">
+    <style name="Theme.Netex" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/nx_primary</item>
+        <item name="colorOnPrimary">@color/nx_on_primary</item>
+        <item name="colorPrimaryContainer">@color/nx_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/nx_on_primary_container</item>
+        <item name="colorSecondary">@color/nx_secondary</item>
+        <item name="colorOnSecondary">@color/nx_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/nx_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/nx_on_secondary_container</item>
+        <item name="colorTertiary">@color/nx_tertiary</item>
+        <item name="colorOnTertiary">@color/nx_on_tertiary</item>
+        <item name="colorTertiaryContainer">@color/nx_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/nx_on_tertiary_container</item>
+        <item name="colorError">@color/nx_error</item>
+        <item name="colorOnError">@color/nx_on_error</item>
+        <item name="colorErrorContainer">@color/nx_error_container</item>
+        <item name="colorOnErrorContainer">@color/nx_on_error_container</item>
+        <item name="android:colorBackground">@color/nx_surface</item>
+        <item name="colorSurface">@color/nx_surface</item>
+        <item name="colorOnSurface">@color/nx_on_surface</item>
+        <item name="colorSurfaceVariant">@color/nx_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/nx_on_surface_variant</item>
+        <item name="colorOutline">@color/nx_outline</item>
+        <item name="colorOutlineVariant">@color/nx_outline_variant</item>
+        <item name="colorSurfaceContainerLowest">@color/nx_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/nx_container_low</item>
+        <item name="colorSurfaceContainer">@color/nx_container</item>
+        <item name="colorSurfaceContainerHigh">@color/nx_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/nx_container_highest</item>
+
         <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
-        <item name="android:windowSplashScreenBackground">?attr/colorSurfaceContainerLowest</item>
+        <item name="android:windowSplashScreenBackground">?attr/colorSurfaceContainer</item>
+
+        <item name="bottomSheetDialogTheme">@style/ThemeOverlay.Netex.BottomSheetDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Netex.AlertDialog</item>
+    </style>
+
+    <style name="ThemeOverlay.Netex.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/Widget.Netex.BottomSheet</item>
+    </style>
+
+    <style name="Widget.Netex.BottomSheet" parent="Widget.Material3.BottomSheet">
+        <item name="backgroundTint">?attr/colorSurfaceContainerLow</item>
+    </style>
+
+    <style name="ThemeOverlay.Netex.AlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurfaceContainerHigh">?attr/colorSurfaceContainerLow</item>
     </style>
 </resources>

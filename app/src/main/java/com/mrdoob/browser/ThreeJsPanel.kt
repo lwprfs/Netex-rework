@@ -21,7 +21,7 @@ private const val SHIM_ASSET = "chrome-shim-panel.js"
 
 @SuppressLint("SetJavaScriptEnabled")
 fun setupThreeJsPanel(context: Context, view: WebView, bridge: PanelExtensionBridge) {
-    view.setBackgroundColor(view.materialColor(com.google.android.material.R.attr.colorSurfaceContainer))
+    view.setBackgroundColor(view.materialColor(com.google.android.material.R.attr.colorSurfaceContainerLowest))
     view.settings.javaScriptEnabled = true
     view.settings.domStorageEnabled = true
     view.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
@@ -70,7 +70,7 @@ fun setupThreeJsPanel(context: Context, view: WebView, bridge: PanelExtensionBri
 }
 
 private fun buildThreeJsPanelThemeInjector(view: WebView): String {
-    val bg = view.materialColorHex(com.google.android.material.R.attr.colorSurfaceContainer)
+    val bg = view.materialColorHex(com.google.android.material.R.attr.colorSurfaceContainerLowest)
     val fg = view.materialColorHex(com.google.android.material.R.attr.colorOnSurface)
     val css = "body{background:$bg!important;color:$fg!important}"
     return "(function(){var s=document.createElement('style');s.textContent=${JSONObject.quote(css)};document.documentElement.appendChild(s);})();"

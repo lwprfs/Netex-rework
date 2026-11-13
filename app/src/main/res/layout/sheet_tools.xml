@@ -1,121 +1,168 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingHorizontal="16dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="28dp">
+    android:layout_height="wrap_content">
 
-    <TextView
-        style="@style/SheetTitle"
-        android:text="Tools" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingBottom="28dp">
 
-    <LinearLayout style="@style/SheetCard">
-
-        <LinearLayout
-            android:id="@+id/toolDesktop"
-            style="@style/SheetRow">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    style="@style/SheetRowTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Desktop site" />
-
-                <TextView
-                    style="@style/SheetRowSubtitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Request the desktop version of pages" />
-            </LinearLayout>
-
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/toolDesktopSwitch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:clickable="false"
-                android:focusable="false" />
-        </LinearLayout>
-
-        <View
+        <com.google.android.material.bottomsheet.BottomSheetDragHandleView
             android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginHorizontal="16dp"
-            android:background="?attr/colorOutlineVariant" />
+            android:layout_height="wrap_content" />
 
-        <LinearLayout
-            android:id="@+id/toolCookies"
-            style="@style/SheetRow">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    style="@style/SheetRowTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Cookies" />
-
-                <TextView
-                    style="@style/SheetRowSubtitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="View, add and delete cookies" />
-            </LinearLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="›"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="22sp" />
-        </LinearLayout>
-
-        <View
+        <TextView
+            style="@style/SheetTitle"
             android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginHorizontal="16dp"
-            android:background="?attr/colorOutlineVariant" />
+            android:layout_marginStart="6dp"
+            android:layout_weight="0"
+            android:text="Menu" />
 
+        <TextView
+            android:id="@+id/toolPageHost"
+            style="@style/SheetSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_marginTop="2dp"
+            android:ellipsize="middle"
+            android:singleLine="true" />
+
+        <!-- Quick actions -->
         <LinearLayout
-            android:id="@+id/toolHar"
-            style="@style/SheetRow">
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
 
             <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
+                android:id="@+id/toolShare"
+                style="@style/ToolTile">
+
+                <ImageView
+                    style="@style/ToolTileIcon"
+                    android:src="@drawable/ic_share" />
 
                 <TextView
-                    style="@style/SheetRowTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Network recording (HAR)" />
-
-                <TextView
-                    android:id="@+id/toolHarSub"
-                    style="@style/SheetRowSubtitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
+                    style="@style/ToolTileLabel"
+                    android:text="Share" />
             </LinearLayout>
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="›"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:textSize="22sp" />
+            <LinearLayout
+                android:id="@+id/toolCopy"
+                style="@style/ToolTile">
+
+                <ImageView
+                    style="@style/ToolTileIcon"
+                    android:src="@drawable/ic_copy" />
+
+                <TextView
+                    style="@style/ToolTileLabel"
+                    android:text="Copy link" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/toolExternal"
+                style="@style/ToolTile">
+
+                <ImageView
+                    style="@style/ToolTileIcon"
+                    android:src="@drawable/ic_open" />
+
+                <TextView
+                    style="@style/ToolTileLabel"
+                    android:text="Open in…" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/toolRefresh"
+                style="@style/ToolTile">
+
+                <ImageView
+                    style="@style/ToolTileIcon"
+                    android:src="@drawable/ic_refresh" />
+
+                <TextView
+                    style="@style/ToolTileLabel"
+                    android:text="Hard reload" />
+            </LinearLayout>
         </LinearLayout>
+
+        <TextView
+            style="@style/SheetSectionLabel"
+            android:text="Browsing" />
+
+        <LinearLayout
+            android:id="@+id/toolCardMain"
+            style="@style/SheetCard" />
+
+        <TextView
+            style="@style/SheetSectionLabel"
+            android:text="Page text size" />
+
+        <LinearLayout
+            style="@style/SheetCard"
+            android:padding="12dp">
+
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/toolZoom"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/zoom85"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="85%" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/zoom100"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="100%" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/zoom125"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="125%" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/zoom150"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="150%" />
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+        </LinearLayout>
+
+        <TextView
+            style="@style/SheetSectionLabel"
+            android:text="Privacy" />
+
+        <LinearLayout
+            android:id="@+id/toolCardDanger"
+            style="@style/SheetCard" />
+
+        <TextView
+            android:id="@+id/toolVersion"
+            style="@style/SheetHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:gravity="center" />
     </LinearLayout>
-</LinearLayout>
+</androidx.core.widget.NestedScrollView>

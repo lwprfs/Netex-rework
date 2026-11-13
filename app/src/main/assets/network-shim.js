@@ -9,8 +9,7 @@
 
   var MAX_BODY = 256 * 1024;        // 256 KB
   var MAX_BINARY = 4 * 1024 * 1024; // 4 MB
-  var MAX_HAR_BODY = 8 * 1024 * 1024;   // untruncated text kept for HAR export
-  var MAX_HAR_BINARY = 3 * 1024 * 1024; // images inlined (base64) into the HAR
+  // Limits for the HAR come from the capture options (set manually in the app, in MB).
   var MAX_BLOBS = 64;               // FIFO cap so long-lived pages don't pin memory
 
   if (!ns.blobs) ns.blobs = new Map();
@@ -33,6 +32,17 @@
     try { return typeof AndroidHar !== 'undefined' && AndroidHar.opt(name); } catch (e) { return false; }
   }
 
+  // Size limit in bytes for a HAR option ("bodies", "images", "fonts", "reqbodies").
+  function harLimit(name, fallback) {
+    try {
+      if (typeof AndroidHar !== 'undefined') {
+        var v = AndroidHar.limit(name);
+        if (typeof v === 'number' && v > 0) return v;
+      }
+    } catch (e) { /* ignore */ }
+    return fallback;
+  }
+
   function absUrl(u) {
     try { return new URL(u, document.baseURI).href; } catch (e) { return u; }
   }
@@ -40,12 +50,14 @@
   // Full (untruncated) text for the HAR; only sent when it is longer than what the panel shows.
   function harText(s) {
     if (typeof s !== 'string' || !harOpt('bodies') || s.length <= MAX_BODY) return undefined;
-    return s.length > MAX_HAR_BODY ? s.slice(0, MAX_HAR_BODY) : s;
+    var max = harLimit('bodies', 8 * 1024 * 1024);
+    return s.length > max ? s.slice(0, max) : s;
   }
 
-  function blobToBase64(blob) {
+  // limitName: "images" or "fonts"; blobs above that limit are not inlined.
+  function blobToBase64(blob, limitName) {
     return new Promise(function (resolve) {
-      if (!blob || blob.size > MAX_HAR_BINARY) return resolve(null);
+      if (!blob || blob.size > harLimit(limitName || 'images', 3 * 1024 * 1024)) return resolve(null);
       var r = new FileReader();
       r.onloadend = function () {
         var res = r.result;
@@ -103,10 +115,24 @@
     return out;
   }
 
+  function capReq(t) {
+    var max = harLimit('reqbodies', MAX_BODY);
+    return t.length > max ? t.slice(0, max) : t;
+  }
+
   function bodyText(b) {
-    if (typeof b === 'string') return clip(b);
+    if (b == null || !harOn() || !harOpt('reqbodies')) return '';
+    if (typeof b === 'string') return capReq(b);
     try {
-      if (typeof URLSearchParams !== 'undefined' && b instanceof URLSearchParams) return clip(b.toString());
+      if (typeof URLSearchParams !== 'undefined' && b instanceof URLSearchParams) return capReq(b.toString());
+      if (typeof FormData !== 'undefined' && b instanceof FormData) {
+        var parts = [];
+        b.forEach(function (v, k) {
+          parts.push(encodeURIComponent(k) + '=' +
+            (typeof v === 'string' ? encodeURIComponent(v) : '[file ' + (v && v.name || '') + ']'));
+        });
+        return capReq(parts.join('&'));
+      }
     } catch (e) { /* ignore */ }
     return '';
   }
@@ -115,6 +141,7 @@
     record.started = req.started;
     record.reqHeaders = req.headers;
     record.reqBody = req.body;
+    record.kind = req.kind || 'fetch';
     return record;
   }
 
@@ -170,6 +197,7 @@
       var start = Date.now();
       var req = {
         started: start,
+        kind: 'fetch',
         headers: headerPairs(init && init.headers ? init.headers : input && input.headers),
         body: bodyText(init && init.body)
       };
@@ -198,8 +226,8 @@
           response.clone().blob()
             .then(function (blob) {
               captureBlob(requestId, blob);
-              if (!harOpt('images')) return emit('', lenHeader || blob.size, { decoded: blob.size });
-              blobToBase64(blob).then(function (b64) {
+              if (!harOpt('images') || !harOpt('kind:image')) return emit('', lenHeader || blob.size, { decoded: blob.size });
+              blobToBase64(blob, 'images').then(function (b64) {
                 emit('', lenHeader || blob.size,
                   b64 ? { harBody: b64, harB64: true, decoded: blob.size } : { decoded: blob.size });
               });
@@ -230,18 +258,39 @@
   // stylesheets, fonts, beacons, the document itself). fetch/XHR are covered above.
   // Panel rows are unchanged (document / iframe / img); scripts, CSS, fonts and beacons are
   // only reported while a HAR recording runs, with full bodies re-read from the HTTP cache.
-  function classify(entry) {
-    if (entry.entryType === 'navigation') return 'text/html';
-    if (entry.entryType !== 'resource') return null;
+  var KIND_CT = {
+    document: 'text/html', script: 'application/javascript', style: 'text/css',
+    image: 'image/*', font: 'font/*', media: '*/*', beacon: '*/*', other: '*/*'
+  };
+
+  function kindOf(entry) {
+    if (entry.entryType === 'navigation') return 'document';
     var t = entry.initiatorType;
-    if (t === 'iframe') return 'text/html';
-    if (t === 'img') return 'image/*';
-    if (t === 'fetch' || t === 'xmlhttprequest') return null;
-    if (!harOpt('resources')) return null;
-    if (t === 'script') return 'application/javascript';
-    if (t === 'css') return 'text/css';
-    if (t === 'link' || t === 'beacon' || t === 'other' || t === 'audio' || t === 'video' || t === 'track') return '*/*';
-    return null;
+    if (t === 'iframe' || t === 'frame') return 'document';
+    if (t === 'fetch') return 'fetch';
+    if (t === 'xmlhttprequest') return 'xhr';
+    if (t === 'beacon') return 'beacon';
+    if (t === 'script') return 'script';
+    if (t === 'img' || t === 'image') return 'image';
+    if (t === 'audio' || t === 'video' || t === 'track') return 'media';
+    var m = String(entry.name || '').split(/[?#]/)[0].match(/\.([a-z0-9]+)$/i);
+    var ext = m ? m[1].toLowerCase() : '';
+    if (ext === 'css') return 'style';
+    if (ext === 'js' || ext === 'mjs') return 'script';
+    if (/^(woff2?|ttf|otf|eot)$/.test(ext)) return 'font';
+    if (/^(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/.test(ext)) return 'image';
+    if (/^(mp4|webm|ogg|mp3|wav|m4a|aac|mov)$/.test(ext)) return 'media';
+    return 'other';
+  }
+
+  // Panel rows: documents, frames and images are always reported (as before). Every other
+  // type is only reported while a HAR recording runs and that type is switched on.
+  function classify(entry) {
+    if (entry.entryType !== 'navigation' && entry.entryType !== 'resource') return null;
+    var kind = kindOf(entry);
+    if (kind === 'fetch' || kind === 'xhr') return null; // covered by the fetch / XHR patches
+    if (kind !== 'document' && kind !== 'image' && !harOpt('kind:' + kind)) return null;
+    return KIND_CT[kind];
   }
 
   function isUninteresting(entry) {
@@ -278,10 +327,12 @@
 
   function wantsBody(entry, ct) {
     if (!origFetch) return false;
-    var t = entry.initiatorType;
-    if (t === 'img') return harOpt('images');
-    if (!harOpt('bodies')) return false;
-    return t === 'script' || t === 'css' || (t === 'link' && /\.(css|js|mjs|json|svg|woff2?|ttf)(\?|$)/i.test(entry.name));
+    var kind = kindOf(entry);
+    if (kind === 'image') return harOpt('images') && harOpt('kind:image');
+    if (!harOpt('kind:' + kind)) return false;
+    if (kind === 'font') return harOpt('fonts');
+    if (kind === 'script' || kind === 'style') return harOpt('bodies');
+    return kind === 'other' && harOpt('bodies') && /\.(css|js|mjs|json|svg)(\?|#|$)/i.test(entry.name);
   }
 
   function postEntry(entry, ct, base) {
@@ -292,7 +343,7 @@
       started: Math.round((performance.timeOrigin || 0) + entry.startTime),
       encoded: entry.encodedBodySize || 0, decoded: entry.decodedBodySize || 0,
       transfer: entry.transferSize || 0, protocol: entry.nextHopProtocol || '',
-      timings: perfTimings(entry)
+      timings: perfTimings(entry), kind: kindOf(entry)
     };
     if (base) for (var k in base) rec[k] = base[k];
     post(rec);
@@ -333,7 +384,8 @@
             base.contentType = rct;
             base.status = res.status || entry.responseStatus || 0;
             if (/^(image|font)\//i.test(rct) || /octet-stream|woff/i.test(rct)) {
-              return res.blob().then(blobToBase64).then(function (b64) {
+              var limitName = /^image\//i.test(rct) ? 'images' : 'fonts';
+              return res.blob().then(function (bl) { return blobToBase64(bl, limitName); }).then(function (b64) {
                 if (b64) { base.harBody = b64; base.harB64 = true; }
               });
             }
@@ -375,7 +427,7 @@
       var url = absUrl(xhr._netUrl || '');
       var requestId = newRequestId();
       var start = Date.now();
-      var req = { started: start, headers: xhr._netHeaders || [], body: bodyText(sendBody) };
+      var req = { started: start, kind: 'xhr', headers: xhr._netHeaders || [], body: bodyText(sendBody) };
       postPending(method, url, requestId, 0, 0, req);
       // Throttle to ~4/s so big downloads (e.g. 12 MB STL) don't flood the bridge.
       var lastProg = 0;

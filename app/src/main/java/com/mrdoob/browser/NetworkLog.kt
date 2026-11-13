@@ -28,7 +28,9 @@ object NetworkLog {
         val decodedSize: Long = -1,
         val transferSize: Long = -1,
         val protocol: String = "",
-        val timings: LongArray? = null
+        val timings: LongArray? = null,
+        // Request category reported by the page shim (fetch, xhr, document, image, script, style, font, media, beacon, other).
+        val kind: String = ""
     )
 
     sealed interface Event {

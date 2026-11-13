@@ -92,6 +92,11 @@ class CookieSheet(
             val row = ItemCookieBinding.inflate(activity.layoutInflater, b.cookieList, false)
             row.cookieName.text = c.name
             row.cookieValue.text = c.value.ifEmpty { "(empty)" }
+            row.root.setOnClickListener {
+                val clipboard = activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("cookie", "${c.name}=${c.value}"))
+                toast("Copied ${c.name}")
+            }
             row.cookieDelete.setOnClickListener {
                 CookieTools.delete(url, c.name) { activity.runOnUiThread { refresh() } }
             }

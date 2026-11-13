@@ -25,7 +25,7 @@ class PanelRenderer(
     fun init() {
         panelView.settings.javaScriptEnabled = true
         panelView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-        panelView.setBackgroundColor(panelView.materialColor(com.google.android.material.R.attr.colorSurfaceContainer))
+        panelView.setBackgroundColor(panelView.materialColor(com.google.android.material.R.attr.colorSurfaceContainerLowest))
         panelView.webChromeClient = WebChromeClient()
         panelView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String?) {
@@ -125,14 +125,27 @@ class PanelRenderer(
         }
     }
 
-    private fun applyTheme() {
+    fun applyTheme() {
         val dark = isNightMode()
-        val fg = if (dark) "#cccccc" else "#222222"
-        val panelBg = panelView.materialColorHex(com.google.android.material.R.attr.colorSurfaceContainer)
-        val viewerBg = panelView.materialColorHex(com.google.android.material.R.attr.colorSurfaceContainerHighest)
-        evalPanel(
-            "window.__panel.setTheme({ dark: $dark, fg: ${q(fg)}, panelBg: ${q(panelBg)}, viewerBg: ${q(viewerBg)} })"
-        )
+        fun hex(id: Int) = activity.colorHex(id)
+        val tokens = JSONObject().apply {
+            put("dark", dark)
+            put("bg", hex(R.color.nx_container_lowest))
+            put("surface", hex(R.color.nx_container_high))
+            put("surfaceLow", hex(R.color.nx_container_low))
+            put("fg", hex(R.color.nx_on_surface))
+            put("fgDim", hex(R.color.nx_on_surface_variant))
+            put("outline", hex(R.color.nx_outline_variant))
+            put("primary", hex(R.color.nx_primary))
+            put("primaryContainer", hex(R.color.nx_primary_container))
+            put("onPrimaryContainer", hex(R.color.nx_on_primary_container))
+            put("error", hex(R.color.nx_error))
+            put("ok", hex(R.color.nx_ok))
+            put("warn", hex(R.color.nx_paused))
+            put("rec", hex(R.color.nx_rec))
+        }.toString()
+        panelView.setBackgroundColor(panelView.materialColor(com.google.android.material.R.attr.colorSurfaceContainerLowest))
+        afterShellLoaded { evalPanel("window.__panel.setTheme($tokens)") }
     }
 
     private fun afterShellLoaded(action: () -> Unit) {

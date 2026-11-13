@@ -7,7 +7,8 @@ private const val TAG = "PanelBridge"
 class PanelBridge(
     private val onFetchBlob: (String) -> Unit,
     private val onEval: (String, String) -> Unit,
-    private val onHarMenu: () -> Unit
+    private val onHarMenu: () -> Unit,
+    private val onCopy: (String) -> Unit
 ) : JsonMessageBridge(TAG) {
 
     companion object {
@@ -19,6 +20,7 @@ class PanelBridge(
             "fetch-blob" -> onFetchBlob(obj.optString("requestId"))
             "eval" -> onEval(obj.optString("evalId"), obj.optString("source"))
             "har-menu" -> onHarMenu()
+            "copy" -> onCopy(obj.optString("text"))
         }
     }
 }

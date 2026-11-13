@@ -12,17 +12,38 @@ bottom bar to open it — four tabs:
   Chrome extension running in-process via a minimum `chrome.*` shim.
   Its background script drives the revision badge on the logo.
 
-## Tools menu
+## Navigation
 
-Tap the menu button to open the **Tools** sheet:
+The bottom bar is now a full navigation dock: **back**, **forward**, a
+**dev tools** toggle, the **menu** and the Three.js status button. The URL pill
+shows the site (lock icon for HTTPS, warning for HTTP) and has a **reload / stop**
+button built in. Tap the handle above the pill, tap the `</>` button, or drag the
+bar up to open the panel; it animates open and snaps shut when barely open.
+The panel has tabs for Console, Source, Network and Three.js, plus clear and close buttons.
 
-- **Desktop site** — request the desktop version of pages (desktop user
-  agent, layout viewport pinned to 1024px).
-- **Cookies** — view, add and delete cookies for the current site.
-- **Network recording (HAR)** — record traffic into a
-  [HAR](https://en.wikipedia.org/wiki/HAR_(file_format)) session that
-  survives page navigations. Start, pause/resume, clear, then share,
-  save or browse the exported `.har` files.
+## Menu
+
+- **Share / Copy link / Open in… / Hard reload** quick actions.
+- **Desktop site** - desktop user agent, layout viewport pinned to 1024px.
+- **Cookies** - view, add, copy and delete cookies for the current site.
+- **Page text size** - 85 / 100 / 125 / 150 %.
+- **Clear browsing data** - cache, cookies, site storage, history.
+- **Network capture (HAR)** - see below.
+
+## Network capture (HAR)
+
+Records traffic into a [HAR](https://en.wikipedia.org/wiki/HAR_(file_format)) session
+that survives page navigations. Record, pause/resume, stop, then share, save or browse
+the exported `.har` files. Three tabs:
+
+- **Session** - live setup summary, presets (Lite / Balanced / Full), max requests,
+  max stored size (MB, set manually) and *pause when full*.
+- **Detail** - everything is switchable on its own:
+  - request types: Fetch/XHR, Documents, Images, Scripts, Stylesheets, Fonts, Audio/video, Beacons & other
+  - bodies with a manual per-item MB limit: text, images, fonts & binaries, request payloads
+  - request headers, cookies, response headers, timing breakdown
+  - redact sensitive values, third-party requests, skip URLs containing...
+- **Export** - share, save to Downloads, file manager, clear.
 
 Pages that request landscape on fullscreen (e.g. YouTube) rotate the app
 through a `screen.orientation.lock()` shim.

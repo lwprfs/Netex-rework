@@ -2,22 +2,23 @@
   var pendingBlobs = new Map();
   var HLJS_BASE = 'https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles';
 
-  function setTheme(opts) {
-    document.documentElement.style.setProperty('--fg', opts.fg);
-    document.documentElement.style.setProperty('--panel-bg', opts.panelBg);
-    document.documentElement.style.setProperty('--viewer-bg', opts.viewerBg);
-    var theme = opts.dark ? 'github-dark' : 'github';
-    document.getElementById('hljs-theme').href = HLJS_BASE + '/' + theme + '.min.css';
+  function setTheme(o) {
+    var st = document.documentElement.style;
+    st.setProperty('--bg', o.bg); st.setProperty('--surface', o.surface); st.setProperty('--surface-low', o.surfaceLow);
+    st.setProperty('--fg', o.fg); st.setProperty('--fg-dim', o.fgDim); st.setProperty('--outline', o.outline);
+    st.setProperty('--primary', o.primary); st.setProperty('--pc', o.primaryContainer); st.setProperty('--opc', o.onPrimaryContainer);
+    st.setProperty('--err', o.error); st.setProperty('--ok', o.ok); st.setProperty('--warn', o.warn); st.setProperty('--rec', o.rec);
+    document.getElementById('hljs-theme').href = HLJS_BASE + '/' + (o.dark ? 'github-dark' : 'github') + '.min.css';
+  }
+
+  function copyText(text) {
+    try { AndroidPanel.postMessage(JSON.stringify({ type: 'copy', text: text })); } catch (e) {}
   }
 
   function setActiveTab(tab) {
     document.getElementById('console-tab').classList.toggle('active', tab === 'console');
     document.getElementById('source-tab').classList.toggle('active', tab === 'source');
     document.getElementById('network-tab').classList.toggle('active', tab === 'network');
-    // Entries that arrived while the tab was hidden don't trigger auto-scroll
-    // (scrollHeight is 0 when the tab is display:none); pin to bottom on first
-    // reveal so the user lands on the latest. requestAnimationFrame waits for
-    // layout to flush after the display flip.
     if (tab === 'console' && !consoleScrolledUp) {
       requestAnimationFrame(function () {
         var entries = document.getElementById('consoleEntries');
@@ -25,12 +26,16 @@
       });
     } else if (tab === 'network' && !networkScrolledUp) {
       requestAnimationFrame(function () {
-        window.scrollTo(0, document.documentElement.scrollHeight);
+        var l = document.getElementById('netList');
+        l.scrollTop = l.scrollHeight;
       });
     }
   }
 
+  var lastSource = '';
   function setSource(html) {
+    lastSource = html;
+    document.getElementById('sourceInfo').textContent = 'Page source · ' + formatSize(html.length);
     var oldCode = document.querySelector('#source-tab code');
     var newCode = document.createElement('code');
     newCode.className = 'language-html';
@@ -53,11 +58,13 @@
 
   var totalBytes = 0;
   var totalCount = 0;
-  // Network rows live in the document's scroll context (unlike Console which has
-  // its own scrollable container). Pin to bottom unless the user scrolled up.
+  var netFilter = 'all';
+  var netQuery = '';
+  var netList = document.getElementById('netList');
+  // Rows live in their own scroll container. Pin to bottom unless the user scrolled up.
   var networkScrolledUp = false;
-  window.addEventListener('scroll', function () {
-    networkScrolledUp = (window.scrollY + window.innerHeight) < (document.documentElement.scrollHeight - 4);
+  netList.addEventListener('scroll', function () {
+    networkScrolledUp = (netList.scrollTop + netList.clientHeight) < (netList.scrollHeight - 4);
   }, { passive: true });
 
   function updateTotals() {
@@ -76,15 +83,48 @@
     try { AndroidPanel.postMessage(JSON.stringify({ type: 'har-menu' })); } catch (e) {}
   });
 
+  function typeOf(r) {
+    var ct = (r.contentType || '').toLowerCase(), u = r.url || '';
+    if (/^image\//.test(ct) || /\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)(\?|#|$)/i.test(u)) return 'img';
+    if (ct.indexOf('html') !== -1) return 'doc';
+    if (ct.indexOf('javascript') !== -1 || ct.indexOf('ecmascript') !== -1 || /\.m?js(\?|#|$)/i.test(u)) return 'js';
+    if (ct.indexOf('css') !== -1 || /\.css(\?|#|$)/i.test(u)) return 'css';
+    if (ct.indexOf('json') !== -1 || ct.indexOf('xml') !== -1 || ct.indexOf('text/') === 0) return 'data';
+    return 'other';
+  }
+
+  function applyNetFilter(det) {
+    var okType = netFilter === 'all' || det.dataset.type === netFilter;
+    var okText = !netQuery || (det.dataset.url || '').toLowerCase().indexOf(netQuery) !== -1;
+    det.classList.toggle('hide', !(okType && okText));
+  }
+
+  function refilterNetwork() {
+    netList.querySelectorAll('details.req').forEach(applyNetFilter);
+  }
+
+  document.getElementById('netChips').addEventListener('click', function (e) {
+    var chip = e.target.closest('.chip');
+    if (!chip) return;
+    netFilter = chip.dataset.t;
+    this.querySelectorAll('.chip').forEach(function (c) { c.classList.toggle('on', c === chip); });
+    refilterNetwork();
+  });
+  document.getElementById('netSearch').addEventListener('input', function () {
+    netQuery = this.value.trim().toLowerCase();
+    refilterNetwork();
+  });
+
+  function showEmptyNetwork() {
+    netList.replaceChildren();
+    var d = document.createElement('div');
+    d.className = 'empty';
+    d.innerHTML = '<b>No requests yet</b>Load or reload a page to see its network traffic.';
+    netList.appendChild(d);
+  }
+
   function clearNetwork() {
-    var tab = document.getElementById('network-tab');
-    Array.from(tab.children).forEach(function (child) {
-      if (child.id !== 'netTotals') child.remove();
-    });
-    var p = document.createElement('p');
-    p.className = 'empty';
-    p.textContent = 'No requests captured yet.';
-    tab.appendChild(p);
+    showEmptyNetwork();
     totalBytes = 0;
     totalCount = 0;
     networkScrolledUp = false;
@@ -92,7 +132,7 @@
   }
 
   function appendNetworkRow(r) {
-    var container = document.getElementById('network-tab');
+    var container = netList;
     var det = r.requestId
       ? container.querySelector('details.req[data-rid="' + r.requestId + '"]')
       : null;
@@ -120,7 +160,7 @@
     renderRow(det, r);
 
     // Scroll after renderRow so scrollHeight reflects the new row's content.
-    if (isNew && !networkScrolledUp) window.scrollTo(0, document.documentElement.scrollHeight);
+    if (isNew && !networkScrolledUp) netList.scrollTop = netList.scrollHeight;
   }
 
   function renderRow(det, r) {
@@ -130,6 +170,9 @@
       : r.status < 500 ? 's4xx'
       : 's5xx';
     var statusText = r.pending ? '…' : r.status === 0 ? '—' : r.status;
+    var type = typeOf(r);
+    det.dataset.type = type;
+    det.dataset.url = r.url || '';
 
     var summary = document.createElement('summary');
     summary.appendChild(span('method ' + r.method, r.method));
@@ -139,9 +182,34 @@
 
     var body = document.createElement('div');
     body.className = 'body';
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.appendChild(span('tag', r.pending ? 'Pending' : (r.status ? 'HTTP ' + r.status : 'No response')));
+    meta.appendChild(span('tag', type.toUpperCase()));
+    if (r.contentType) meta.appendChild(span('tag', r.contentType.split(';')[0]));
+    if (r.durationMs) meta.appendChild(span('tag', r.durationMs + ' ms'));
+    if (r.size) meta.appendChild(span('tag', formatSize(r.size)));
+    body.appendChild(meta);
+    body.appendChild(span('fullurl', r.url));
+
+    var actions = document.createElement('div');
+    actions.className = 'actions';
+    var copyUrl = document.createElement('button');
+    copyUrl.textContent = 'Copy URL';
+    copyUrl.addEventListener('click', function (e) { e.stopPropagation(); copyText(r.url); });
+    actions.appendChild(copyUrl);
+    if (!r.pending && r.body) {
+      var copyBody = document.createElement('button');
+      copyBody.textContent = 'Copy body';
+      copyBody.addEventListener('click', function (e) { e.stopPropagation(); copyText(r.body); });
+      actions.appendChild(copyBody);
+    }
+    body.appendChild(actions);
     if (!r.pending) body.appendChild(buildMedia(r) || buildText(r));
 
     det.replaceChildren(summary, body);
+    applyNetFilter(det);
   }
 
   function bindToggle(det, rid) {
@@ -329,9 +397,9 @@
   }
 
   function updateConsoleTotals() {
-    document.getElementById('consoleLogTotal').textContent = '≡ ' + consoleLogCount;
-    document.getElementById('consoleWarnTotal').textContent = '⚠ ' + consoleWarnCount;
-    document.getElementById('consoleErrorTotal').textContent = '✕ ' + consoleErrorCount;
+    document.getElementById('consoleLogTotal').textContent = consoleLogCount;
+    document.getElementById('consoleWarnTotal').textContent = consoleWarnCount;
+    document.getElementById('consoleErrorTotal').textContent = consoleErrorCount;
   }
 
   function shortenSource(src) {
@@ -375,6 +443,14 @@
     if (!Array.isArray(parsed)) parsed = [false, 'unexpected result shape'];
     appendConsoleEntry({ level: parsed[0] ? 'result' : 'result_error', message: String(parsed[1]) });
   }
+
+  document.getElementById('consoleBar').addEventListener('click', function (e) {
+    var chip = e.target.closest('.chip');
+    if (!chip) return;
+    document.getElementById('consoleEntries').dataset.f = chip.dataset.f;
+    this.querySelectorAll('.chip').forEach(function (c) { c.classList.toggle('on', c === chip); });
+  });
+  document.getElementById('sourceCopy').addEventListener('click', function () { if (lastSource) copyText(lastSource); });
 
   function wireConsoleScroll() {
     var entries = document.getElementById('consoleEntries');

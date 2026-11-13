@@ -46,7 +46,8 @@ class NetworkBridge(
                 decodedSize = obj.optLong("decoded", -1),
                 transferSize = obj.optLong("transfer", -1),
                 protocol = obj.optString("protocol"),
-                timings = obj.optJSONArray("timings")?.let { a -> LongArray(a.length()) { a.optLong(it, -1) } }
+                timings = obj.optJSONArray("timings")?.let { a -> LongArray(a.length()) { a.optLong(it, -1) } },
+                kind = obj.optString("kind")
             )
         )
     }
