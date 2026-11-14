@@ -9,6 +9,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.Configuration
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -111,6 +112,9 @@ class MainActivity : AppCompatActivity() {
     // Floating pop-up (record / reload / cookies). Storage permission is only needed on Android 9-.
     private lateinit var floatingControls: FloatingControls
     private lateinit var findBar: FindInPage
+    private var appearanceRev = 0
+    private var nightMask = 0
+    private var siteIcon: Bitmap? = null
     private var defaultMobileUserAgent = ""
     private var appliedCustomUa = ""
     private var afterStoragePermission: (() -> Unit)? = null
@@ -163,6 +167,10 @@ class MainActivity : AppCompatActivity() {
     private var preFullscreenOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Accent colour / Material You dynamic colours (Settings → Appearance) before any view is built.
+        Appearance.apply(this)
+        appearanceRev = Appearance.revision(this)
+        nightMask = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -206,6 +214,11 @@ class MainActivity : AppCompatActivity() {
         observeConsoleLog()
         wireUrlBar()
         wirePanelHeader()
+        if (Appearance.rememberTab(this)) {
+            BrowserPrefs.getDev(this, "last_tab")?.toIntOrNull()
+                ?.takeIf { it in PanelRenderer.Tab.entries.indices }
+                ?.let { binding.panelTabs.getTabAt(it)?.select() }
+        }
         wireNavigation()
         binding.menuButton.setOnClickListener { showToolsSheet() }
         installBackHandler()
@@ -235,6 +248,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        // Light <-> dark: rebuild so every view picks up the other palette.
+        if ((newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) != nightMask) {
+            recreate()
+            return
+        }
         binding.webView.setBackgroundColor(
             binding.webView.materialColor(com.google.android.material.R.attr.colorSurfaceContainerLowest)
         )
@@ -243,6 +261,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (Appearance.revision(this) != appearanceRev) {
+            recreate() // theme / dynamic colours / accent changed in Settings
+            return
+        }
+        applyAddressBarSize()
         // Settings may have changed the floating bubble (shown / ring buttons / haptics).
         if (::floatingControls.isInitialized) floatingControls.applyPrefs()
         applyBrowserPrefs()
@@ -394,6 +417,8 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                 setLoading(true)
+                siteIcon = null
+                updateFavicon()
                 DetectionStore.reset()
                 // "Preserve log" keeps old rows and just marks the navigation; otherwise start clean.
                 if (BrowserPrefs.devFlag(this@MainActivity, "keep_network")) panel.markNavigation("network", url)
@@ -443,6 +468,11 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 setLoading(newProgress in 0..99)
                 setUrlBubbleProgress(newProgress)
+            }
+
+            override fun onReceivedIcon(view: WebView, icon: Bitmap?) {
+                siteIcon = icon
+                updateFavicon()
             }
 
             override fun onReceivedTitle(view: WebView, title: String?) {
@@ -650,6 +680,63 @@ class MainActivity : AppCompatActivity() {
             override fun openHar() = showHarSheet()
             override fun clearBrowsingData() = confirmClearBrowsingData()
         }).show()
+    }
+
+    private fun applyAddressBarSize() {
+        val h = dp(if (Appearance.addressBarCompact(this)) 44 else 50)
+        val lp = binding.urlBubble.layoutParams
+        if (lp.height != h) {
+            lp.height = h
+            binding.urlBubble.layoutParams = lp
+        }
+    }
+
+    private fun updateFavicon() {
+        val show = siteIcon != null && !binding.urlBar.hasFocus()
+        binding.faviconIcon.visibility = if (show) View.VISIBLE else View.GONE
+        if (show) binding.faviconIcon.setImageBitmap(siteIcon)
+    }
+
+    /** Long-press on the lock, site icon or reload button: quick actions for the current page. */
+    private fun showUrlActions(anchor: View) {
+        anchor.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        val menu = android.widget.PopupMenu(this, anchor)
+        val hasPage = hasPage() && currentUrl.startsWith("http")
+        if (hasPage) menu.menu.add(0, 1, 0, "Copy link")
+        menu.menu.add(0, 2, 1, "Paste and go")
+        if (hasPage) {
+            menu.menu.add(0, 3, 2, "Share page")
+            menu.menu.add(0, 4, 3, "Open in another app")
+            menu.menu.add(0, 5, 4, "Hard reload")
+        }
+        menu.menu.add(0, 6, 5, "Find in page")
+        menu.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> copyToClipboard(currentUrl, "Link copied")
+                2 -> {
+                    val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                        .primaryClip?.getItemAt(0)?.coerceToText(this)?.toString()?.trim().orEmpty()
+                    if (clip.isEmpty()) Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+                    else loadUrl(clip)
+                }
+                3 -> shareText(currentTitle ?: currentUrl, currentUrl)
+                4 -> startActivity(
+                    Intent.createChooser(Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl)), "Open with")
+                        .putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, arrayOf(ComponentName(this, MainActivity::class.java)))
+                )
+                5 -> hardReload()
+                6 -> findBar.show()
+            }
+            true
+        }
+        menu.show()
+    }
+
+    private fun toggleFullscreenPanel() {
+        val max = maxPanelHeight()
+        val current = binding.bottomPanel.layoutParams.height
+        if (current >= max - dp(8)) animatePanelTo(minOf(max, (binding.root.height * 0.5f).toInt()))
+        else animatePanelTo(max)
     }
 
     private fun hardReload() {
@@ -870,6 +957,7 @@ class MainActivity : AppCompatActivity() {
                 updateSecurityIcon()
                 setUrlBarText(currentDisplay())
             }
+            updateFavicon()
         }
     }
 
@@ -887,6 +975,12 @@ class MainActivity : AppCompatActivity() {
         binding.dragHandle.setOnClickListener { togglePanel() }
         binding.panelReload.setOnClickListener {
             if (loading) binding.webView.stopLoading() else binding.webView.reload()
+        }
+        binding.panelReload.setOnLongClickListener { showUrlActions(it); true }
+        binding.faviconIcon.setOnLongClickListener { showUrlActions(it); true }
+        binding.securityIcon.setOnLongClickListener { showUrlActions(it); true }
+        binding.securityIcon.setOnClickListener {
+            Toast.makeText(this, binding.securityIcon.contentDescription, Toast.LENGTH_SHORT).show()
         }
         binding.threeLogoButton.setOnClickListener {
             dismissUrlEditing()
@@ -936,6 +1030,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         binding.panelClose.setOnClickListener { animatePanelTo(0) }
+        binding.panelExpand.setOnClickListener { toggleFullscreenPanel() }
     }
 
     private fun excludeFromSystemGestures(view: View) {
@@ -948,6 +1043,7 @@ class MainActivity : AppCompatActivity() {
     private fun switchTab(tab: PanelRenderer.Tab) {
         if (tab == currentTab) return
         currentTab = tab
+        if (Appearance.rememberTab(this)) BrowserPrefs.setDev(this, "last_tab", tab.ordinal.toString())
         binding.panelClear.visibility =
             if (tab == PanelRenderer.Tab.CONSOLE || tab == PanelRenderer.Tab.NETWORK) View.VISIBLE else View.INVISIBLE
         val showThreeJs = tab == PanelRenderer.Tab.THREEJS
@@ -1006,11 +1102,11 @@ class MainActivity : AppCompatActivity() {
         clip.alpha = PROGRESS_ALPHA
         progressAnimator = if (percent >= 100) {
             val fill = ValueAnimator.ofInt(clip.level, 10000).apply {
-                duration = 200L
+                duration = Appearance.scaled(this@MainActivity, 200L)
                 addUpdateListener { clip.level = it.animatedValue as Int }
             }
             val fade = ValueAnimator.ofInt(PROGRESS_ALPHA, 0).apply {
-                duration = 250L
+                duration = Appearance.scaled(this@MainActivity, 250L)
                 startDelay = 80L
                 addUpdateListener { clip.alpha = it.animatedValue as Int }
             }
@@ -1020,7 +1116,7 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             ValueAnimator.ofInt(clip.level, target).apply {
-                duration = 300L
+                duration = Appearance.scaled(this@MainActivity, 300L)
                 interpolator = DecelerateInterpolator()
                 addUpdateListener { clip.level = it.animatedValue as Int }
                 start()
@@ -1125,7 +1221,7 @@ class MainActivity : AppCompatActivity() {
         val from = binding.bottomPanel.layoutParams.height
         if (from == target) return
         panelAnimator = ValueAnimator.ofInt(from, target).apply {
-            duration = 240L
+            duration = Appearance.scaled(this@MainActivity, 240L)
             interpolator = DecelerateInterpolator()
             addUpdateListener { setPanelHeight(it.animatedValue as Int) }
             start()
@@ -1145,6 +1241,12 @@ class MainActivity : AppCompatActivity() {
             if (open) binding.navDevtools.setColorFilter(
                 binding.navDevtools.materialColor(com.google.android.material.R.attr.colorPrimary)
             ) else binding.navDevtools.clearColorFilter()
+        }
+        val max = maxPanelHeight()
+        if (max > 0) {
+            val full = h > 0 && h >= max - dp(8)
+            binding.panelExpand.setImageResource(if (full) R.drawable.ic_fullscreen_exit else R.drawable.ic_fullscreen)
+            binding.panelExpand.contentDescription = if (full) "Shrink developer tools" else "Expand developer tools"
         }
         if (wasClosed && h > 0 && currentTab == PanelRenderer.Tab.SOURCE) maybeRefreshSource()
     }

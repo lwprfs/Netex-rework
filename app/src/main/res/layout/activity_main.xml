@@ -66,6 +66,15 @@
                 android:contentDescription="Connection security"
                 app:tint="?attr/colorOnSurfaceVariant" />
 
+            <ImageView
+                android:id="@+id/faviconIcon"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginStart="8dp"
+                android:contentDescription="Site icon"
+                android:scaleType="fitCenter"
+                android:visibility="gone" />
+
             <EditText
                 android:id="@+id/urlBar"
                 android:layout_width="0dp"
@@ -238,6 +247,12 @@
                 style="@style/PanelIconButton"
                 android:contentDescription="Clear"
                 android:src="@drawable/ic_sweep" />
+
+            <ImageButton
+                android:id="@+id/panelExpand"
+                style="@style/PanelIconButton"
+                android:contentDescription="Expand developer tools"
+                android:src="@drawable/ic_fullscreen" />
 
             <ImageButton
                 android:id="@+id/panelClose"

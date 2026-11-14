@@ -97,7 +97,7 @@ class HarSheet(
             setPadding(activity.dp(18), activity.dp(16), activity.dp(18), activity.dp(16))
             textSize = 13.5f
             setLineSpacing(0f, 1.2f)
-            setTextColor(ContextCompat.getColor(activity, R.color.nx_on_surface))
+            setTextColor(activity.nx(R.color.nx_on_surface))
             text = HarOptions.summary()
         }
         card.addView(summaryView)
@@ -349,7 +349,7 @@ class HarSheet(
         val v = TextView(activity).apply {
             this.text = text
             textSize = 12.5f
-            setTextColor(ContextCompat.getColor(activity, R.color.nx_on_surface_variant))
+            setTextColor(activity.nx(R.color.nx_on_surface_variant))
             setPadding(activity.dp(6), activity.dp(8), activity.dp(6), 0)
         }
         parent.addView(v)
@@ -396,7 +396,7 @@ class HarSheet(
         r.optTitle.text = title
         r.optSubtitle.text = subtitle
         if (destructive) {
-            val red = ContextCompat.getColor(activity, R.color.nx_error)
+            val red = activity.nx(R.color.nx_error)
             r.optTitle.setTextColor(red)
             r.optIcon.imageTintList = ColorStateList.valueOf(red)
         } else {

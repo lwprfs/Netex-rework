@@ -62,7 +62,7 @@ class LibraryActivity : AppCompatActivity() {
             if (row is Row.Header) {
                 val tv = (convertView as? TextView) ?: TextView(this@LibraryActivity).apply {
                     textSize = 12.5f
-                    setTextColor(ContextCompat.getColor(context, R.color.nx_primary))
+                    setTextColor(context.nx(R.color.nx_primary))
                     setPadding(dp(20), dp(16), dp(20), dp(6))
                 }
                 tv.text = row.text
@@ -74,7 +74,7 @@ class LibraryActivity : AppCompatActivity() {
                 addView(TextView(context).apply { textSize = 15f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
                 addView(TextView(context).apply {
                     textSize = 12.5f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-                    setTextColor(ContextCompat.getColor(context, R.color.nx_on_surface_variant))
+                    setTextColor(context.nx(R.color.nx_on_surface_variant))
                 })
             }
             val (title, url) = when (row) {
@@ -89,6 +89,7 @@ class LibraryActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        Appearance.apply(this)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         BrowserLibrary.init(applicationContext)
@@ -136,7 +137,7 @@ class LibraryActivity : AppCompatActivity() {
         empty = TextView(this).apply {
             textSize = 14f
             gravity = Gravity.CENTER
-            setTextColor(ContextCompat.getColor(context, R.color.nx_on_surface_variant))
+            setTextColor(context.nx(R.color.nx_on_surface_variant))
             setPadding(dp(32), dp(48), dp(32), dp(48))
         }
         list = ListView(this).apply {

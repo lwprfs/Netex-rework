@@ -48,4 +48,39 @@
     <style name="ThemeOverlay.Netex.AlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
         <item name="colorSurfaceContainerHigh">?attr/colorSurfaceContainerLow</item>
     </style>
+
+    <style name="ThemeOverlay.Netex.Accent.Teal" parent="">
+        <item name="colorPrimary">@color/acc_teal_primary</item>
+        <item name="colorOnPrimary">@color/acc_teal_on_primary</item>
+        <item name="colorPrimaryContainer">@color/acc_teal_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/acc_teal_on_primary_container</item>
+    </style>
+
+    <style name="ThemeOverlay.Netex.Accent.Rose" parent="">
+        <item name="colorPrimary">@color/acc_rose_primary</item>
+        <item name="colorOnPrimary">@color/acc_rose_on_primary</item>
+        <item name="colorPrimaryContainer">@color/acc_rose_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/acc_rose_on_primary_container</item>
+    </style>
+
+    <style name="ThemeOverlay.Netex.Accent.Amber" parent="">
+        <item name="colorPrimary">@color/acc_amber_primary</item>
+        <item name="colorOnPrimary">@color/acc_amber_on_primary</item>
+        <item name="colorPrimaryContainer">@color/acc_amber_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/acc_amber_on_primary_container</item>
+    </style>
+
+    <style name="ThemeOverlay.Netex.Accent.Green" parent="">
+        <item name="colorPrimary">@color/acc_green_primary</item>
+        <item name="colorOnPrimary">@color/acc_green_on_primary</item>
+        <item name="colorPrimaryContainer">@color/acc_green_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/acc_green_on_primary_container</item>
+    </style>
+
+    <style name="ThemeOverlay.Netex.Accent.Blue" parent="">
+        <item name="colorPrimary">@color/acc_blue_primary</item>
+        <item name="colorOnPrimary">@color/acc_blue_on_primary</item>
+        <item name="colorPrimaryContainer">@color/acc_blue_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/acc_blue_on_primary_container</item>
+    </style>
 </resources>

@@ -95,7 +95,7 @@ class InjectionSheet(
             text = "They run when a page finishes loading, in list order (not before the page's own scripts). " +
                 "Long-press an entry to run it now, reorder or delete it."
             textSize = 12.5f
-            setTextColor(ContextCompat.getColor(activity, R.color.nx_on_surface_variant))
+            setTextColor(activity.nx(R.color.nx_on_surface_variant))
             setPadding(activity.dp(6), activity.dp(10), activity.dp(6), 0)
         })
     }

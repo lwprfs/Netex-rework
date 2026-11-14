@@ -24,7 +24,7 @@ fun View.roundCorners(radiusDp: Int) {
 fun Context.dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
 fun Context.colorHex(@ColorRes id: Int): String =
-    String.format("#%06X", 0xFFFFFF and ContextCompat.getColor(this, id))
+    String.format("#%06X", 0xFFFFFF and nx(id))
 
 /** Calls [onChange] after every edit (small replacement for core-ktx doAfterTextChanged). */
 fun EditText.onTextChanged(onChange: (String) -> Unit) {

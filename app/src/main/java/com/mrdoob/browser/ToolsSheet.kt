@@ -134,7 +134,7 @@ class ToolsSheet(
 
         // Privacy
         val clear = row(b.toolCardDanger, R.drawable.ic_delete, "Clear browsing data", "Cache, cookies, site storage and history")
-        val red = ContextCompat.getColor(activity, R.color.nx_error)
+        val red = activity.nx(R.color.nx_error)
         clear.optTitle.setTextColor(red)
         clear.optIcon.imageTintList = ColorStateList.valueOf(red)
         clear.root.setOnClickListener { dialog.dismiss(); host.clearBrowsingData() }

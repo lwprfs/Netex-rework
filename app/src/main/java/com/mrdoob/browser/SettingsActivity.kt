@@ -71,6 +71,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        Appearance.apply(this)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // Settings can be restored on their own after the process died.
@@ -131,6 +132,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun build() {
         content.removeAllViews()
         entries.clear()
+        buildAppearance()
         buildGeneral()
         buildBrowser()
         buildPrivacy()
@@ -168,6 +170,87 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         flush()
+    }
+
+    // --- Appearance ------------------------------------------------------------------------------
+
+    private fun buildAppearance() {
+        section("APPEARANCE")
+        val card = newCard()
+
+        val theme = row(card, R.drawable.ic_tune, "Theme", "Light, dark, or follow the system")
+        theme.optValue.visibility = View.VISIBLE
+        theme.optValue.text = when (Appearance.themeMode(this)) {
+            Appearance.THEME_LIGHT -> "Light"
+            Appearance.THEME_DARK -> "Dark"
+            else -> "System"
+        }
+        theme.root.setOnClickListener {
+            val modes = listOf(Appearance.THEME_SYSTEM, Appearance.THEME_LIGHT, Appearance.THEME_DARK)
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Theme")
+                .setSingleChoiceItems(arrayOf("Follow system", "Light", "Dark"),
+                    modes.indexOf(Appearance.themeMode(this)).coerceAtLeast(0)) { d, which ->
+                    d.dismiss()
+                    Appearance.setThemeMode(this, modes[which])
+                    recreate()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        if (Appearance.dynamicAvailable()) {
+            switchRow(card, R.drawable.ic_image, "Dynamic colours", "Use your wallpaper's Material You colours",
+                { Appearance.dynamicColors(this) },
+                { Appearance.setDynamicColors(this, it); recreate() })
+        } else {
+            row(card, R.drawable.ic_image, "Dynamic colours", "Needs Android 12 or newer")
+        }
+
+        val accent = row(card, R.drawable.ic_filter, "Accent colour",
+            if (Appearance.dynamicColors(this)) "Not used while dynamic colours are on" else "Colour of buttons, tabs and highlights")
+        accent.optValue.visibility = View.VISIBLE
+        accent.optValue.text = Appearance.accent(this).name.substringBefore(" (")
+        accent.root.setOnClickListener {
+            val names = Appearance.ACCENTS.map { it.name }.toTypedArray()
+            val checked = Appearance.ACCENTS.indexOfFirst { it.id == Appearance.accentId(this) }.coerceAtLeast(0)
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Accent colour")
+                .setSingleChoiceItems(names, checked) { d, which ->
+                    d.dismiss()
+                    Appearance.setAccent(this, Appearance.ACCENTS[which].id)
+                    recreate()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        switchRow(card, R.drawable.ic_search, "Compact address bar", "A slimmer address bar leaves more room for the page",
+            { Appearance.addressBarCompact(this) }, { Appearance.setAddressBarCompact(this, it) })
+
+        val anim = row(card, R.drawable.ic_timer, "Animations", "Speed of panel, progress and bubble animations")
+        anim.optValue.visibility = View.VISIBLE
+        anim.optValue.text = when (Appearance.animations(this)) {
+            Appearance.ANIM_OFF -> "Off"
+            Appearance.ANIM_REDUCED -> "Reduced"
+            else -> "Normal"
+        }
+        anim.root.setOnClickListener {
+            val values = listOf(Appearance.ANIM_NORMAL, Appearance.ANIM_REDUCED, Appearance.ANIM_OFF)
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Animations")
+                .setSingleChoiceItems(arrayOf("Normal", "Reduced", "Off"),
+                    values.indexOf(Appearance.animations(this)).coerceAtLeast(0)) { d, which ->
+                    Appearance.setAnimations(this, values[which])
+                    d.dismiss()
+                    build()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        switchRow(card, R.drawable.ic_code, "Remember developer tools tab", "Reopen the Console / Source / Network tab you used last",
+            { Appearance.rememberTab(this) }, { Appearance.setRememberTab(this, it) })
     }
 
     // --- General -----------------------------------------------------------------------------
@@ -664,7 +747,7 @@ class SettingsActivity : AppCompatActivity() {
         val v = TextView(this).apply {
             this.text = text
             textSize = 12.5f
-            setTextColor(ContextCompat.getColor(this@SettingsActivity, R.color.nx_on_surface_variant))
+            setTextColor(this@SettingsActivity.nx(R.color.nx_on_surface_variant))
             setPadding(dp(6), dp(8), dp(6), 0)
         }
         content.addView(v)

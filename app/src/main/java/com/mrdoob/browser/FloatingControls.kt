@@ -306,8 +306,8 @@ class FloatingControls(
                 v.scaleX = 0.3f
                 v.scaleY = 0.3f
                 v.animate().alpha(1f).scaleX(1f).scaleY(1f)
-                    .setStartDelay(i * 25L)
-                    .setDuration(180L)
+                    .setStartDelay(Appearance.scaled(context, i * 25L))
+                    .setDuration(Appearance.scaled(context, 180L))
                     .setInterpolator(OvershootInterpolator(1.4f))
                     .start()
             }
@@ -346,7 +346,7 @@ class FloatingControls(
         val target = if (onLeft) minTx else maxOf(minTx, maxTx)
         snapping = true
         ValueAnimator.ofFloat(b.translationX, target).apply {
-            duration = 180L
+            duration = Appearance.scaled(context, 180L)
             interpolator = DecelerateInterpolator()
             addUpdateListener {
                 b.translationX = it.animatedValue as Float
@@ -419,7 +419,7 @@ class FloatingControls(
 
     /** Filled circle/pill background; returns it with the contrasting content colour. */
     private fun filled(@ColorRes fillRes: Int): Pair<RippleDrawable, Int> {
-        val fill = ContextCompat.getColor(context, fillRes)
+        val fill = context.nx(fillRes)
         val on = if (ColorUtils.calculateLuminance(fill) > 0.5) 0xFF1B1B21.toInt() else 0xFFFFFFFF.toInt()
         val shape = GradientDrawable().apply {
             setColor(fill)

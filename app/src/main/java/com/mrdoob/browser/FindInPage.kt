@@ -84,7 +84,7 @@ class FindInPage(private val parent: FrameLayout, private val webView: WebView) 
         }
         count = TextView(context).apply {
             textSize = 13f
-            setTextColor(ContextCompat.getColor(context, R.color.nx_on_surface_variant))
+            setTextColor(context.nx(R.color.nx_on_surface_variant))
             setPadding(context.dp(8), 0, context.dp(8), 0)
         }
         webView.setFindListener { active, total, _ ->

@@ -36,4 +36,26 @@
     <color name="nx_paused">#F9A825</color>
     <color name="nx_idle">#9E9E9E</color>
     <color name="nx_ok">#2E9E5B</color>
+
+    <!-- Accent palettes (Settings → Appearance → Accent colour) -->
+    <color name="acc_teal_primary">#FF006A60</color>
+    <color name="acc_teal_on_primary">#FFFFFFFF</color>
+    <color name="acc_teal_primary_container">#FF9EF2E3</color>
+    <color name="acc_teal_on_primary_container">#FF00201C</color>
+    <color name="acc_rose_primary">#FFB42B51</color>
+    <color name="acc_rose_on_primary">#FFFFFFFF</color>
+    <color name="acc_rose_primary_container">#FFFFD9DF</color>
+    <color name="acc_rose_on_primary_container">#FF3F0016</color>
+    <color name="acc_amber_primary">#FF8B5000</color>
+    <color name="acc_amber_on_primary">#FFFFFFFF</color>
+    <color name="acc_amber_primary_container">#FFFFDCBE</color>
+    <color name="acc_amber_on_primary_container">#FF2C1600</color>
+    <color name="acc_green_primary">#FF386A20</color>
+    <color name="acc_green_on_primary">#FFFFFFFF</color>
+    <color name="acc_green_primary_container">#FFB8F397</color>
+    <color name="acc_green_on_primary_container">#FF082100</color>
+    <color name="acc_blue_primary">#FF0061A4</color>
+    <color name="acc_blue_on_primary">#FFFFFFFF</color>
+    <color name="acc_blue_primary_container">#FFD1E4FF</color>
+    <color name="acc_blue_on_primary_container">#FF001D36</color>
 </resources>
