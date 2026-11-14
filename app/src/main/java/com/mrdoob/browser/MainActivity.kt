@@ -54,10 +54,12 @@ import androidx.webkit.WebViewFeature
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayout
 import com.mrdoob.browser.databinding.ActivityMainBinding
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -89,7 +91,16 @@ class MainActivity : AppCompatActivity() {
         onFetchBlob = { rid -> fetchBlobFromMain(rid) },
         onEval = { evalId, source -> evalInPage(evalId, source) },
         onHarMenu = { runOnUiThread { showHarSheet() } },
-        onCopy = { text -> runOnUiThread { copyToClipboard(text, "Copied") } }
+        onCopy = { text -> runOnUiThread { copyToClipboard(text, "Copied") } },
+        onShare = { title, text -> runOnUiThread { shareText(title, text) } },
+        onBlock = { pattern -> runOnUiThread { blockPattern(pattern) } },
+        onPref = { key, value -> BrowserPrefs.setDev(this, key, value) },
+        onReplay = { id, req ->
+            lifecycleScope.launch {
+                val result = withContext(Dispatchers.IO) { Replayer.run(req) }
+                panel.deliverReplay(id, result)
+            }
+        }
     )
     private val saveHarAs = registerForActivityResult(
         ActivityResultContracts.CreateDocument(HarExporter.MIME_SAVE)
@@ -235,6 +246,7 @@ class MainActivity : AppCompatActivity() {
         // Settings may have changed the floating bubble (shown / ring buttons / haptics).
         if (::floatingControls.isInitialized) floatingControls.applyPrefs()
         applyBrowserPrefs()
+        if (::panel.isInitialized) panel.pushPrefs()
     }
 
     /** Applies Settings → Browser (JavaScript, third-party cookies, user agent) to the live WebView. */
@@ -383,8 +395,11 @@ class MainActivity : AppCompatActivity() {
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
                 setLoading(true)
                 DetectionStore.reset()
-                NetworkLog.reset()
-                ConsoleLog.reset()
+                // "Preserve log" keeps old rows and just marks the navigation; otherwise start clean.
+                if (BrowserPrefs.devFlag(this@MainActivity, "keep_network")) panel.markNavigation("network", url)
+                else NetworkLog.reset()
+                if (BrowserPrefs.devFlag(this@MainActivity, "keep_console")) panel.markNavigation("console", url)
+                else ConsoleLog.reset()
                 extensionRouter.onPageNavigationStarted()
                 setUrlBubbleProgress(0, animate = false)
                 if (!docStartInjectionAvailable) {
@@ -718,6 +733,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun hasPage(): Boolean = currentUrl.isNotEmpty() && currentUrl != BLANK_URL
+
+    private fun shareText(title: String, text: String) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(send, title.ifEmpty { "Share" }))
+    }
+
+    /** "Block URL / domain" from the Network tab: adds a Block rule (manage them in Settings → Request rules). */
+    private fun blockPattern(pattern: String) {
+        val p = pattern.trim()
+        if (p.isEmpty()) return
+        val rules = RequestRules.rules()
+        if (rules.any { it.pattern == p && it.action == RequestRules.Action.BLOCK }) {
+            Toast.makeText(this, "Already blocked", Toast.LENGTH_SHORT).show()
+            return
+        }
+        RequestRules.save(rules + RequestRules.Rule(pattern = p, action = RequestRules.Action.BLOCK))
+        Toast.makeText(this, "Blocked $p — reload to see the effect", Toast.LENGTH_LONG).show()
+    }
 
     private fun copyToClipboard(text: String, message: String) {
         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

@@ -97,4 +97,9 @@ object BrowserPrefs {
     /** Replaces the mobile user agent when not blank (desktop mode still wins while it is on). */
     fun customUserAgent(context: Context): String = p(context).getString(KEY_UA, "").orEmpty()
     fun setCustomUserAgent(context: Context, ua: String) { p(context).edit().putString(KEY_UA, ua.trim()).apply() }
+
+    /** Small key/value store for developer-panel options (preserve logs, timestamps, command history). */
+    fun getDev(context: Context, key: String): String? = p(context).getString("dev_$key", null)
+    fun setDev(context: Context, key: String, value: String) { p(context).edit().putString("dev_$key", value).apply() }
+    fun devFlag(context: Context, key: String): Boolean = getDev(context, key) == "true"
 }

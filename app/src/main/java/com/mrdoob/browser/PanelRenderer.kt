@@ -32,6 +32,7 @@ class PanelRenderer(
                 if (shellLoaded) return
                 shellLoaded = true
                 applyTheme()
+                pushPrefs()
                 while (pending.isNotEmpty()) pending.removeFirst().invoke()
             }
         }
@@ -82,6 +83,13 @@ class PanelRenderer(
                 record.requestHeaders.forEach { (k, v) -> arr.put(org.json.JSONArray().put(k).put(v)) }
             })
             put("reqBody", record.requestBody.take(20000))
+            put("resHeaders", org.json.JSONArray().also { arr ->
+                record.responseHeaders.forEach { (k, v) -> arr.put(org.json.JSONArray().put(k).put(v)) }
+            })
+            put("startedAt", record.startedAt)
+            put("kind", record.kind)
+            // [blocked, dns, connect, ssl, send, wait, receive]; -1 = the page could not measure it.
+            record.timings?.let { t -> put("timings", org.json.JSONArray().also { a -> t.forEach { a.put(it) } }) }
         }.toString()
         afterShellLoaded {
             evalPanel("window.__panel.appendNetworkRow($payload)")
@@ -116,6 +124,26 @@ class PanelRenderer(
         afterShellLoaded {
             evalPanel("window.__panel.appendConsoleEntry($payload)")
         }
+    }
+
+    /** Sends the saved developer-panel options (timestamps, preserve logs, command history) to the panel. */
+    fun pushPrefs() {
+        val o = JSONObject().apply {
+            put("timestamps", BrowserPrefs.devFlag(activity, "timestamps"))
+            put("keepConsole", BrowserPrefs.devFlag(activity, "keep_console"))
+            put("keepNetwork", BrowserPrefs.devFlag(activity, "keep_network"))
+            put("history", try { JSONArray(BrowserPrefs.getDev(activity, "cmd_history") ?: "[]") } catch (_: Exception) { JSONArray() })
+        }.toString()
+        afterShellLoaded { evalPanel("window.__panel.setPrefs($o)") }
+    }
+
+    /** Preserve-logs mode: keep the old rows, but mark where the page navigated. */
+    fun markNavigation(kind: String, url: String?) {
+        afterShellLoaded { evalPanel("window.__panel.markNavigation(${q(kind)}, ${q(url ?: "")})") }
+    }
+
+    fun deliverReplay(id: String, resultJson: String) {
+        afterShellLoaded { evalPanel("window.__panel.deliverReplay(${q(id)}, ${q(resultJson)})") }
     }
 
     fun clearConsole() {

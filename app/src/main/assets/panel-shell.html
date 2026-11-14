@@ -93,19 +93,98 @@ code.hljs { background: transparent !important; padding: 0 !important; }
 .body pre { margin: 0; padding: 4px 12px 12px; font: 11.5px/1.45 var(--mono); white-space: pre-wrap; word-wrap: break-word; }
 .body img { display: block; margin: 0 auto; max-width: 100%; height: auto; padding: 12px; background: var(--surface); }
 .body model-viewer { display: block; width: 100%; height: 300px; background: var(--surface); }
+
+/* ---- console extras ---- */
+.entry.hide { display: none; }
+.entry .ts { display: none; flex-shrink: 0; opacity: .5; font-size: 11px; }
+#consoleEntries.ts-on .entry .ts { display: inline; }
+.entry.sel { background: color-mix(in srgb, var(--pc) 22%, transparent); }
+.entry .eact { display: none; flex: 0 0 100%; padding-left: 22px; gap: 6px; }
+.entry.sel .eact { display: flex; }
+.eact button { padding: 4px 11px; border-radius: 999px; background: var(--surface); font: 600 11.5px system-ui, sans-serif; }
+.sep { padding: 6px 4px; text-align: center; font-size: 11px; color: var(--fg-dim); border-bottom: 1px dashed var(--outline); word-break: break-all; }
+.prompt { align-items: flex-end; }
+.prompt.multi { border-radius: 18px; }
+.prompt textarea { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: inherit; font: 13px var(--mono); padding: 3px 0; resize: none; max-height: 140px; }
+.pbtn { padding: 4px 9px; border-radius: 999px; background: var(--bg); font-weight: 700; flex-shrink: 0; }
+.pbtn.run { background: var(--pc); color: var(--opc); }
+.lbl { color: var(--fg-dim); font-size: 11.5px; min-width: 48px; }
+input[type=search] { -webkit-appearance: none; appearance: none; }
+
+/* ---- JSON tree ---- */
+.jt, .jv { font: 12px/1.5 var(--mono); }
+.jd > summary, .jn { padding: 1px 0 1px 14px; word-break: break-all; }
+.jd > summary { cursor: pointer; list-style: none; margin-left: -14px; padding-left: 14px; }
+.jd > summary::-webkit-details-marker { display: none; }
+.jd > summary::before { content: '▸'; display: inline-block; width: 14px; margin-left: -14px; color: var(--fg-dim); }
+.jd[open] > summary::before { content: '▾'; }
+.jd .jd, .jd .jn { margin-left: 14px; }
+.jkey { color: var(--primary); }
+.jstr { color: var(--ok); } .jnum { color: var(--warn); } .jbool { color: var(--rec); } .jnull, .jdim, .jprev { color: var(--fg-dim); }
+.jbar { display: flex; gap: 6px; padding: 4px 0 8px; }
+.jbar input { flex: 1; min-width: 0; background: var(--surface); border: 0; outline: 0; color: inherit; font: 12px system-ui, sans-serif; padding: 6px 12px; border-radius: 999px; }
+.jbar button { padding: 5px 11px; border-radius: 999px; background: var(--surface); font-weight: 600; font-size: 12px; flex-shrink: 0; }
+.jhint { color: var(--fg-dim); font: 11px system-ui, sans-serif; padding: 6px 0 0; }
+.jv { padding: 4px 12px 12px; }
+.entry .msg .jd > summary { margin-left: 0; }
+.entry .msg .jd { margin-left: 0; }
+
+/* ---- request details ---- */
+.actions { flex-wrap: wrap; }
+.sec { border-top: 1px solid color-mix(in srgb, var(--outline) 55%, transparent); }
+.sec > summary { padding: 8px 12px; cursor: pointer; font-weight: 700; font-size: 12px; color: var(--fg-dim); list-style: none; }
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::after { content: ' ▾'; opacity: .6; }
+.sec[open] > summary::after { content: ' ▴'; }
+.kv { padding: 0 12px 10px; font: 11.5px/1.45 var(--mono); }
+.kvrow { display: flex; gap: 8px; padding: 2px 0; }
+.kvk { flex: 0 0 38%; color: var(--primary); word-break: break-all; }
+.kvv { flex: 1; min-width: 0; word-break: break-all; }
+.pad { padding: 4px 12px 10px; }
+.tbar { display: flex; height: 10px; margin: 4px 12px 8px; border-radius: 5px; overflow: hidden; background: var(--surface); }
+.tseg.t0 { background: var(--fg-dim); } .tseg.t1 { background: #4db6ac; } .tseg.t2 { background: #ffb74d; } .tseg.t3 { background: #ba68c8; }
+.tseg.t4 { background: #64b5f6; } .tseg.t5 { background: var(--ok); } .tseg.t6 { background: var(--primary); }
+.req.old { opacity: .55; }
+.navsep { padding: 5px 12px; text-align: center; font-size: 11px; color: var(--fg-dim); background: var(--surface-low); word-break: break-all; }
+iframe.hp { width: 100%; height: 320px; border: 0; background: #fff; display: block; }
+.prevbtn { margin: 0 12px 8px; padding: 5px 12px; border-radius: 999px; background: var(--surface); font-weight: 600; font-size: 12px; }
+
+/* ---- overlays (waterfall, replay) ---- */
+.ov { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; background: var(--bg); }
+.ovhead { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--outline); flex-shrink: 0; }
+.ovbody { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 10px 12px 16px; }
+.form label { display: block; margin: 10px 0 4px; color: var(--fg-dim); font-size: 11.5px; font-weight: 600; }
+.form input[type=text], .form select, .form textarea { width: 100%; background: var(--surface); border: 0; outline: 0; color: inherit; border-radius: 10px; padding: 8px 10px; font: 12px var(--mono); }
+.form textarea { resize: vertical; min-height: 70px; }
+.form .chk { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 12px; color: var(--fg); font-weight: 500; }
+.form .go { margin-top: 12px; padding: 9px 18px; border-radius: 999px; background: var(--pc); color: var(--opc); font-weight: 700; }
+.note { color: var(--fg-dim); font-size: 11.5px; margin-top: 8px; }
+.err { color: var(--err); }
+.wf-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 11.5px; }
+.wf-label { flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-track { position: relative; flex: 1; height: 12px; background: var(--surface); border-radius: 6px; }
+.wf-bar { position: absolute; top: 0; bottom: 0; border-radius: 6px; background: var(--primary); min-width: 3px; }
+.wf-bar.e { background: var(--err); } .wf-bar.w { background: var(--warn); }
+.wf-ms { flex: 0 0 56px; text-align: right; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
 
 <div id="console-tab" class="tab active">
-  <div class="bar" id="consoleBar">
+  <div class="bar" id="consoleBar"><div class="chips">
     <button class="chip on" data-f="all" id="fAll">All</button>
     <button class="chip" data-f="log" id="fLog">Logs<span class="n" id="consoleLogTotal">0</span></button>
+    <button class="chip" data-f="info" id="fInfo">Info</button>
+    <button class="chip" data-f="debug" id="fDebug">Debug</button>
     <button class="chip warn" data-f="warn" id="fWarn">Warnings<span class="n" id="consoleWarnTotal">0</span></button>
     <button class="chip error" data-f="error" id="fError">Errors<span class="n" id="consoleErrorTotal">0</span></button>
+  </div></div>
+  <div class="bar wrap" style="padding-top:6px;padding-bottom:6px">
+    <label class="search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><input id="consoleSearch" type="search" placeholder="Filter messages" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <button class="chip" id="cTime">Time</button><button class="chip" id="cKeep">Keep</button><button class="chip" id="cCopy">Copy</button><button class="chip" id="cTxt">TXT</button><button class="chip" id="cJson">JSON</button><button class="chip" id="cClear">Clear</button>
   </div>
   <div class="scroll" id="consoleEntries" data-f="all"></div>
-  <form class="prompt" id="consolePrompt"><span>❯</span><input id="consoleInput" type="text" placeholder="Run JavaScript" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" /></form>
+  <form class="prompt" id="consolePrompt"><span>❯</span><textarea id="consoleInput" rows="1" placeholder="Run JavaScript" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea><button type="button" class="pbtn" id="cPrev" aria-label="Previous command">↑</button><button type="button" class="pbtn" id="cNext" aria-label="Next command">↓</button><button type="button" class="pbtn" id="cMulti" aria-label="Multi-line">↵</button><button type="button" class="pbtn" id="cHistClear" aria-label="Clear command history">✕</button><button type="submit" class="pbtn run" id="cRun">Run</button></form>
 </div>
 
 <div id="source-tab" class="tab">
@@ -119,8 +198,13 @@ code.hljs { background: transparent !important; padding: 0 !important; }
     <button type="button" class="har-btn" id="harBtn">HAR</button>
   </div>
   <div class="bar" style="padding-top:6px;padding-bottom:6px"><div class="chips" id="netChips">
-    <button class="chip on" data-t="all">All</button><button class="chip" data-t="doc">Doc</button><button class="chip" data-t="js">JS</button><button class="chip" data-t="css">CSS</button><button class="chip" data-t="img">Img</button><button class="chip" data-t="data">Data</button><button class="chip" data-t="other">Other</button><button class="chip" data-t="err">Errors</button><button class="chip" data-t="slow">Slow</button><button class="chip" data-t="post">POST</button>
+    <button class="chip on" data-t="all">All</button><button class="chip" data-t="doc">Doc</button><button class="chip" data-t="js">JS</button><button class="chip" data-t="css">CSS</button><button class="chip" data-t="img">Img</button><button class="chip" data-t="media">Media</button><button class="chip" data-t="font">Font</button><button class="chip" data-t="fetch">Fetch</button><button class="chip" data-t="xhr">XHR</button><button class="chip" data-t="data">Data</button><button class="chip" data-t="other">Other</button><button class="chip" data-t="err">Errors</button><button class="chip" data-t="slow">Slow</button><button class="chip" data-t="more">Filters ▾</button>
   </div></div>
+  <div id="netMore" style="display:none">
+    <div class="bar" style="padding-top:6px;padding-bottom:6px"><span class="lbl">Method</span><div class="chips" id="netMethods"><button class="chip on" data-m="all">All</button><button class="chip" data-m="GET">GET</button><button class="chip" data-m="POST">POST</button><button class="chip" data-m="PUT">PUT</button><button class="chip" data-m="PATCH">PATCH</button><button class="chip" data-m="DELETE">DELETE</button></div></div>
+    <div class="bar" style="padding-top:6px;padding-bottom:6px"><span class="lbl">Status</span><div class="chips" id="netStatuses"><button class="chip on" data-s="all">All</button><button class="chip" data-s="2">2xx</button><button class="chip" data-s="3">3xx</button><button class="chip" data-s="4">4xx</button><button class="chip" data-s="5">5xx</button><button class="chip" data-s="failed">Failed</button></div></div>
+  </div>
+  <div class="bar" style="padding-top:6px;padding-bottom:6px"><button class="chip" id="nKeep">Keep log</button><button class="chip" id="nWater">Waterfall</button><button class="chip" id="nCopyUrls">Copy URLs</button><button class="chip" id="nExport">Export</button></div>
   <div class="stats"><span id="netTotalsCount"></span><span class="spacer"></span><span id="netTotalsSize"></span></div>
   <div class="scroll" id="netList"><div class="empty"><b>No requests yet</b>Load or reload a page to see its network traffic.</div></div>
 </div>

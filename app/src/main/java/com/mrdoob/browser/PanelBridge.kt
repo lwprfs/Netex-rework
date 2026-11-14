@@ -8,7 +8,11 @@ class PanelBridge(
     private val onFetchBlob: (String) -> Unit,
     private val onEval: (String, String) -> Unit,
     private val onHarMenu: () -> Unit,
-    private val onCopy: (String) -> Unit
+    private val onCopy: (String) -> Unit,
+    private val onShare: (String, String) -> Unit,
+    private val onBlock: (String) -> Unit,
+    private val onPref: (String, String) -> Unit,
+    private val onReplay: (String, JSONObject) -> Unit
 ) : JsonMessageBridge(TAG) {
 
     companion object {
@@ -21,6 +25,10 @@ class PanelBridge(
             "eval" -> onEval(obj.optString("evalId"), obj.optString("source"))
             "har-menu" -> onHarMenu()
             "copy" -> onCopy(obj.optString("text"))
+            "share" -> onShare(obj.optString("title"), obj.optString("text"))
+            "block" -> onBlock(obj.optString("pattern"))
+            "pref" -> onPref(obj.optString("key"), obj.optString("value"))
+            "replay" -> onReplay(obj.optString("id"), obj)
         }
     }
 }

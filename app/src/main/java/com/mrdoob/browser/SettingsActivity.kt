@@ -134,6 +134,7 @@ class SettingsActivity : AppCompatActivity() {
         buildGeneral()
         buildBrowser()
         buildPrivacy()
+        buildDevTools()
         buildFloating()
         buildCapture()
         buildRules()
@@ -318,6 +319,27 @@ class SettingsActivity : AppCompatActivity() {
                 .show()
         }
         hint("Changes apply to the open page when you return to the browser.")
+    }
+
+    // --- Developer tools -----------------------------------------------------------------------
+
+    private fun buildDevTools() {
+        section("DEVELOPER TOOLS")
+        val card = newCard()
+        fun dev(key: String) = { BrowserPrefs.devFlag(this, key) }
+        fun setDev(key: String) = { on: Boolean -> BrowserPrefs.setDev(this, key, on.toString()) }
+        switchRow(card, R.drawable.ic_list, "Preserve console log", "Keep console messages when the page navigates or reloads",
+            dev("keep_console"), setDev("keep_console"))
+        switchRow(card, R.drawable.ic_network, "Preserve network log", "Keep requests when the page navigates or reloads",
+            dev("keep_network"), setDev("keep_network"))
+        switchRow(card, R.drawable.ic_timer, "Console timestamps", "Show the time each console message arrived",
+            dev("timestamps"), setDev("timestamps"))
+        val clear = row(card, R.drawable.ic_sweep, "Clear command history", "Forget the JavaScript commands you ran in the console")
+        clear.root.setOnClickListener {
+            BrowserPrefs.setDev(this, "cmd_history", "[]")
+            Toast.makeText(this, "Command history cleared", Toast.LENGTH_SHORT).show()
+        }
+        hint("Also available as toggles inside the Console and Network tabs.")
     }
 
     // --- Privacy & data ------------------------------------------------------------------------
