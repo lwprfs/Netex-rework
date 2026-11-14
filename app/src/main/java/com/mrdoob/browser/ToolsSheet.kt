@@ -22,6 +22,11 @@ interface ToolsHost {
     fun changeDesktopMode(on: Boolean)
     fun changeTextZoom(percent: Int)
     fun openSettings()
+    val isBookmarked: Boolean
+    fun findInPage()
+    fun toggleBookmark()
+    fun openLibrary()
+    fun openInjections()
     fun sharePage()
     fun copyLink()
     fun openExternal()
@@ -64,7 +69,36 @@ class ToolsSheet(
             host.changeDesktopMode(on)
         }
 
-        val settings = row(b.toolCardMain, R.drawable.ic_settings, "Settings", "Floating bubble, capture, request rules, cookies")
+        val find = row(b.toolCardMain, R.drawable.ic_search, "Find in page", "Highlight and jump between matches")
+        find.root.setOnClickListener {
+            dialog.dismiss()
+            host.findInPage()
+        }
+
+        val mark = row(
+            b.toolCardMain, R.drawable.ic_bookmark,
+            if (host.isBookmarked) "Remove bookmark" else "Bookmark this page", "Save it to your bookmarks"
+        )
+        mark.root.setOnClickListener {
+            dialog.dismiss()
+            host.toggleBookmark()
+        }
+
+        val library = row(b.toolCardMain, R.drawable.ic_history, "Bookmarks & history", "Search, open, edit and clear")
+        library.optChevron.visibility = View.VISIBLE
+        library.root.setOnClickListener {
+            dialog.dismiss()
+            host.openLibrary()
+        }
+
+        val scripts = row(b.toolCardMain, R.drawable.ic_code, "Scripts & styles", "Run your own JavaScript or CSS on chosen sites")
+        scripts.optChevron.visibility = View.VISIBLE
+        scripts.root.setOnClickListener {
+            dialog.dismiss()
+            host.openInjections()
+        }
+
+        val settings = row(b.toolCardMain, R.drawable.ic_settings, "Settings", "Search engine, homepage, bubble, capture, rules, cookies")
         settings.optChevron.visibility = View.VISIBLE
         settings.root.setOnClickListener {
             dialog.dismiss()

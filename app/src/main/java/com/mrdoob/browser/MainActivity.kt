@@ -99,6 +99,9 @@ class MainActivity : AppCompatActivity() {
 
     // Floating pop-up (record / reload / cookies). Storage permission is only needed on Android 9-.
     private lateinit var floatingControls: FloatingControls
+    private lateinit var findBar: FindInPage
+    private var defaultMobileUserAgent = ""
+    private var appliedCustomUa = ""
     private var afterStoragePermission: (() -> Unit)? = null
     private val requestStoragePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -171,6 +174,9 @@ class MainActivity : AppCompatActivity() {
 
         HarRecorder.init(applicationContext)
         RequestRules.init(applicationContext)
+        BrowserLibrary.init(applicationContext)
+        BrowserLibrary.preload()
+        InjectionStore.init(applicationContext)
         desktopMode = DesktopMode.isEnabled(this)
         documentStartScript = DocumentStartScripts.load(this)
         extensionRouter.bindPageView(binding.webView)
@@ -181,6 +187,7 @@ class MainActivity : AppCompatActivity() {
         setupThreeJsPanel(this, binding.threePanelView, panelExtensionBridge)
         floatingControls = FloatingControls(binding.root, floatingHost)
         floatingControls.applyPrefs()
+        findBar = FindInPage(binding.root, binding.webView)
         observeDetectionState()
         observeNetworkLog()
         observeHarState()
@@ -205,7 +212,7 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) {
             binding.webView.restoreState(savedInstanceState)
         } else {
-            val incoming = extractUrlFromIntent(intent) ?: lastSessionUrl()
+            val incoming = extractUrlFromIntent(intent) ?: startupUrl()
             if (incoming != null) {
                 loadUrl(incoming)
             } else {
@@ -227,6 +234,27 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // Settings may have changed the floating bubble (shown / ring buttons / haptics).
         if (::floatingControls.isInitialized) floatingControls.applyPrefs()
+        applyBrowserPrefs()
+    }
+
+    /** Applies Settings → Browser (JavaScript, third-party cookies, user agent) to the live WebView. */
+    private fun applyBrowserPrefs() {
+        val web = binding.webView
+        var reload = false
+        val js = BrowserPrefs.javaScriptEnabled(this)
+        if (web.settings.javaScriptEnabled != js) {
+            web.settings.javaScriptEnabled = js
+            reload = true
+        }
+        CookieManager.getInstance().setAcceptThirdPartyCookies(web, BrowserPrefs.thirdPartyCookies(this))
+        val custom = BrowserPrefs.customUserAgent(this)
+        if (custom != appliedCustomUa) {
+            appliedCustomUa = custom
+            mobileUserAgent = custom.ifBlank { defaultMobileUserAgent }
+            applyDesktopMode()
+            reload = true
+        }
+        if (reload && hasPage()) web.reload()
     }
 
     override fun onPause() {
@@ -240,6 +268,13 @@ class MainActivity : AppCompatActivity() {
         // custom view attached to decorView; clean up so we don't leak.
         if (fullscreenView != null) exitFullscreen()
         super.onDestroy()
+    }
+
+    /** Page to open at launch, following Settings → Startup (restore last page / homepage / blank). */
+    private fun startupUrl(): String? = when (BrowserPrefs.startupMode(this)) {
+        BrowserPrefs.STARTUP_HOME -> BrowserPrefs.homepage(this).takeIf { it.isNotBlank() }
+        BrowserPrefs.STARTUP_BLANK -> null
+        else -> lastSessionUrl()
     }
 
     private fun lastSessionUrl(): String? = getPreferences(MODE_PRIVATE)
@@ -311,7 +346,8 @@ class MainActivity : AppCompatActivity() {
             webView.materialColor(com.google.android.material.R.attr.colorSurfaceContainerLowest)
         )
         val settings = webView.settings
-        settings.javaScriptEnabled = true
+        settings.javaScriptEnabled = BrowserPrefs.javaScriptEnabled(this)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, BrowserPrefs.thirdPartyCookies(this))
         settings.domStorageEnabled = true
         @Suppress("DEPRECATION")
         settings.databaseEnabled = true
@@ -330,6 +366,9 @@ class MainActivity : AppCompatActivity() {
         mobileUserAgent = settings.userAgentString
             .replace("; wv", "")
             .replace(" wv", "") + " Netex/0.1"
+        defaultMobileUserAgent = mobileUserAgent
+        appliedCustomUa = BrowserPrefs.customUserAgent(this)
+        if (appliedCustomUa.isNotBlank()) mobileUserAgent = appliedCustomUa
         applyDesktopMode()
 
         webView.webViewClient = object : WebViewClient() {
@@ -361,6 +400,11 @@ class MainActivity : AppCompatActivity() {
                 updateNavState()
                 sourceDirty = true
                 maybeRefreshSource()
+                BrowserLibrary.recordVisit(url, view.title)
+                // Scripts & styles from Menu → Scripts & styles that match this site.
+                for (item in InjectionStore.matching(url)) {
+                    view.evaluateJavascript(InjectionStore.scriptFor(item), null)
+                }
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
@@ -576,6 +620,11 @@ class MainActivity : AppCompatActivity() {
                 binding.webView.settings.textZoom = percent
             }
             override fun openSettings() = this@MainActivity.openSettings()
+            override val isBookmarked: Boolean get() = BrowserLibrary.isBookmarked(currentUrl)
+            override fun findInPage() { findBar.show() }
+            override fun toggleBookmark() = this@MainActivity.toggleBookmark()
+            override fun openLibrary() { startActivity(Intent(this@MainActivity, LibraryActivity::class.java)) }
+            override fun openInjections() { InjectionSheet(this@MainActivity, injectionHost).show() }
             override fun sharePage() = this@MainActivity.sharePage()
             override fun copyLink() {
                 if (hasPage()) copyToClipboard(currentUrl, "Link copied")
@@ -628,6 +677,27 @@ class MainActivity : AppCompatActivity() {
         binding.webView.evaluateJavascript(
             "try{localStorage.clear();sessionStorage.clear()}catch(e){};0"
         ) { hardReload() }
+    }
+
+    private val injectionHost = object : InjectionHost {
+        override val pageUrl: String get() = currentUrl
+        override fun runOnPage(script: String) { binding.webView.evaluateJavascript(script, null) }
+    }
+
+    private fun toggleBookmark() {
+        if (!hasPage() || !currentUrl.startsWith("http")) {
+            Toast.makeText(this, "Open a website first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val url = currentUrl
+        if (BrowserLibrary.isBookmarked(url)) {
+            BrowserLibrary.removeBookmarkByUrl(url)
+            Toast.makeText(this, "Bookmark removed", Toast.LENGTH_SHORT).show()
+        } else {
+            val title = currentTitle?.takeIf { it.isNotBlank() } ?: Uri.parse(url).host ?: url
+            BrowserLibrary.addBookmark(title, url)
+            Toast.makeText(this, "Bookmarked", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun openSettings() {
@@ -928,7 +998,7 @@ class MainActivity : AppCompatActivity() {
             trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
             trimmed.startsWith("about:") || trimmed.startsWith("file:") -> trimmed
             looksLikeUrl(trimmed) -> "https://$trimmed"
-            else -> "https://duckduckgo.com/?q=${Uri.encode("!ducky $trimmed")}"
+            else -> SearchEngines.searchUrl(this, trimmed)
         }
         binding.webView.loadUrl(normalized)
     }
@@ -955,7 +1025,9 @@ class MainActivity : AppCompatActivity() {
     private fun installBackHandler() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (fullscreenView != null) {
+                if (::findBar.isInitialized && findBar.isShown) {
+                    findBar.hide()
+                } else if (fullscreenView != null) {
                     exitFullscreen()
                 } else if (binding.webView.canGoBack()) {
                     binding.webView.goBack()

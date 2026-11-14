@@ -12,6 +12,15 @@ object BrowserPrefs {
     private const val KEY_FLOAT_Y = "floating_y"
     private const val KEY_FLOAT_ITEMS = "floating_items"
     private const val KEY_HAPTICS = "floating_haptics"
+    private const val KEY_HOME = "homepage"
+    private const val KEY_STARTUP = "startup_mode"
+    private const val KEY_JS = "javascript_enabled"
+    private const val KEY_3P = "third_party_cookies"
+    private const val KEY_UA = "custom_user_agent"
+
+    const val STARTUP_RESTORE = "restore"
+    const val STARTUP_HOME = "home"
+    const val STARTUP_BLANK = "blank"
 
     /** Optional buttons of the floating ring (Play / Resume / Save / Share are always there). */
     const val ITEM_RELOAD = "reload"
@@ -67,4 +76,25 @@ object BrowserPrefs {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_FLOAT_LEFT, left).putFloat(KEY_FLOAT_Y, y).apply()
     }
+
+    private fun p(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** Page opened by the "Open homepage" startup behaviour (empty = none). */
+    fun homepage(context: Context): String = p(context).getString(KEY_HOME, "").orEmpty()
+    fun setHomepage(context: Context, url: String) { p(context).edit().putString(KEY_HOME, url.trim()).apply() }
+
+    /** What the browser opens at launch: the last page (default), the homepage, or a blank page. */
+    fun startupMode(context: Context): String = p(context).getString(KEY_STARTUP, STARTUP_RESTORE) ?: STARTUP_RESTORE
+    fun setStartupMode(context: Context, mode: String) { p(context).edit().putString(KEY_STARTUP, mode).apply() }
+
+    fun javaScriptEnabled(context: Context): Boolean = p(context).getBoolean(KEY_JS, true)
+    fun setJavaScriptEnabled(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_JS, on).apply() }
+
+    /** WebView's own default is off, so that stays the default here. */
+    fun thirdPartyCookies(context: Context): Boolean = p(context).getBoolean(KEY_3P, false)
+    fun setThirdPartyCookies(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_3P, on).apply() }
+
+    /** Replaces the mobile user agent when not blank (desktop mode still wins while it is on). */
+    fun customUserAgent(context: Context): String = p(context).getString(KEY_UA, "").orEmpty()
+    fun setCustomUserAgent(context: Context, ua: String) { p(context).edit().putString(KEY_UA, ua.trim()).apply() }
 }

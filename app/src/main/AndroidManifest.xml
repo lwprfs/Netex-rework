@@ -49,6 +49,11 @@
             android:label="Settings"
             android:windowSoftInputMode="adjustResize" />
 
+        <activity
+            android:name=".LibraryActivity"
+            android:exported="false"
+            android:label="Bookmarks &amp; history" />
+
         <!-- Shares the cached .har file with other apps -->
         <provider
             android:name="androidx.core.content.FileProvider"
