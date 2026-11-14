@@ -93,9 +93,22 @@
     return 'other';
   }
 
+  var netTerms = [];
+
   function applyNetFilter(det) {
-    var okType = netFilter === 'all' || det.dataset.type === netFilter;
-    var okText = !netQuery || (det.dataset.url || '').toLowerCase().indexOf(netQuery) !== -1;
+    var d = det.dataset;
+    var okType;
+    if (netFilter === 'all') okType = true;
+    else if (netFilter === 'err') okType = d.err === '1';
+    else if (netFilter === 'slow') okType = d.slow === '1';
+    else if (netFilter === 'post') okType = d.write === '1';
+    else okType = d.type === netFilter;
+    // Every space-separated word must appear in "method status url type content-type".
+    var okText = true;
+    var hay = d.hay || '';
+    for (var i = 0; i < netTerms.length; i++) {
+      if (hay.indexOf(netTerms[i]) === -1) { okText = false; break; }
+    }
     det.classList.toggle('hide', !(okType && okText));
   }
 
@@ -112,6 +125,7 @@
   });
   document.getElementById('netSearch').addEventListener('input', function () {
     netQuery = this.value.trim().toLowerCase();
+    netTerms = netQuery ? netQuery.split(/\s+/) : [];
     refilterNetwork();
   });
 
@@ -163,6 +177,37 @@
     if (isNew && !networkScrolledUp) netList.scrollTop = netList.scrollHeight;
   }
 
+  function shellQuote(str) {
+    return "'" + String(str).replace(/'/g, "'\\''") + "'";
+  }
+
+  function toCurl(r) {
+    var method = (r.method || 'GET').toUpperCase();
+    var out = 'curl ' + shellQuote(r.url);
+    if (method !== 'GET') out += ' -X ' + method;
+    (r.reqHeaders || []).forEach(function (h) {
+      if (h[0] && h[0].charAt(0) !== ':') out += ' -H ' + shellQuote(h[0] + ': ' + h[1]);
+    });
+    if (r.reqBody) out += ' --data-raw ' + shellQuote(r.reqBody);
+    return out;
+  }
+
+  // Sends the same request again from the page itself (so cookies and origin match); the new
+  // request shows up in this list like any other.
+  function replayRequest(r) {
+    var method = (r.method || 'GET').toUpperCase();
+    var headers = {};
+    (r.reqHeaders || []).forEach(function (h) {
+      if (/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(h[0] || '')) headers[h[0]] = h[1];
+    });
+    var opts = { method: method, headers: headers, credentials: 'include' };
+    if (r.reqBody && method !== 'GET' && method !== 'HEAD') opts.body = r.reqBody;
+    var source = '(fetch(' + JSON.stringify(r.url) + ',' + JSON.stringify(opts) + ').catch(function(){}),0)';
+    try {
+      AndroidPanel.postMessage(JSON.stringify({ type: 'eval', evalId: 'replay-' + Date.now(), source: source }));
+    } catch (e) {}
+  }
+
   function renderRow(det, r) {
     var statusClass = (r.pending || r.status === 0) ? 's0'
       : r.status < 300 ? 's2xx'
@@ -173,6 +218,10 @@
     var type = typeOf(r);
     det.dataset.type = type;
     det.dataset.url = r.url || '';
+    det.dataset.err = (!r.pending && (r.status >= 400 || r.status === 0)) ? '1' : '0';
+    det.dataset.slow = (!r.pending && r.durationMs > 1000) ? '1' : '0';
+    det.dataset.write = ['POST', 'PUT', 'PATCH', 'DELETE'].indexOf((r.method || '').toUpperCase()) !== -1 ? '1' : '0';
+    det.dataset.hay = ((r.method || '') + ' ' + (r.pending ? '' : r.status) + ' ' + (r.url || '') + ' ' + type + ' ' + (r.contentType || '')).toLowerCase();
 
     var summary = document.createElement('summary');
     summary.appendChild(span('method ' + r.method, r.method));
@@ -199,6 +248,16 @@
     copyUrl.textContent = 'Copy URL';
     copyUrl.addEventListener('click', function (e) { e.stopPropagation(); copyText(r.url); });
     actions.appendChild(copyUrl);
+    var copyCurl = document.createElement('button');
+    copyCurl.textContent = 'Copy cURL';
+    copyCurl.addEventListener('click', function (e) { e.stopPropagation(); copyText(toCurl(r)); });
+    actions.appendChild(copyCurl);
+    if (!r.pending) {
+      var replayBtn = document.createElement('button');
+      replayBtn.textContent = 'Replay';
+      replayBtn.addEventListener('click', function (e) { e.stopPropagation(); replayRequest(r); });
+      actions.appendChild(replayBtn);
+    }
     if (!r.pending && r.body) {
       var copyBody = document.createElement('button');
       copyBody.textContent = 'Copy body';

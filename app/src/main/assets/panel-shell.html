@@ -115,11 +115,11 @@ code.hljs { background: transparent !important; padding: 0 !important; }
 
 <div id="network-tab" class="tab">
   <div class="bar">
-    <label class="search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><input id="netSearch" type="search" placeholder="Filter URLs" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <label class="search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><input id="netSearch" type="search" placeholder="Filter: url, method, status, type" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
     <button type="button" class="har-btn" id="harBtn">HAR</button>
   </div>
   <div class="bar" style="padding-top:6px;padding-bottom:6px"><div class="chips" id="netChips">
-    <button class="chip on" data-t="all">All</button><button class="chip" data-t="doc">Doc</button><button class="chip" data-t="js">JS</button><button class="chip" data-t="css">CSS</button><button class="chip" data-t="img">Img</button><button class="chip" data-t="data">Data</button><button class="chip" data-t="other">Other</button>
+    <button class="chip on" data-t="all">All</button><button class="chip" data-t="doc">Doc</button><button class="chip" data-t="js">JS</button><button class="chip" data-t="css">CSS</button><button class="chip" data-t="img">Img</button><button class="chip" data-t="data">Data</button><button class="chip" data-t="other">Other</button><button class="chip" data-t="err">Errors</button><button class="chip" data-t="slow">Slow</button><button class="chip" data-t="post">POST</button>
   </div></div>
   <div class="stats"><span id="netTotalsCount"></span><span class="spacer"></span><span id="netTotalsSize"></span></div>
   <div class="scroll" id="netList"><div class="empty"><b>No requests yet</b>Load or reload a page to see its network traffic.</div></div>

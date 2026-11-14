@@ -170,6 +170,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         HarRecorder.init(applicationContext)
+        RequestRules.init(applicationContext)
         desktopMode = DesktopMode.isEnabled(this)
         documentStartScript = DocumentStartScripts.load(this)
         extensionRouter.bindPageView(binding.webView)
@@ -179,7 +180,7 @@ class MainActivity : AppCompatActivity() {
         panel = PanelRenderer(this, binding.panelView, binding.webView).also { it.init() }
         setupThreeJsPanel(this, binding.threePanelView, panelExtensionBridge)
         floatingControls = FloatingControls(binding.root, floatingHost)
-        floatingControls.setEnabled(BrowserPrefs.floatingControls(this))
+        floatingControls.applyPrefs()
         observeDetectionState()
         observeNetworkLog()
         observeHarState()
@@ -220,6 +221,12 @@ class MainActivity : AppCompatActivity() {
             binding.webView.materialColor(com.google.android.material.R.attr.colorSurfaceContainerLowest)
         )
         panel.applyTheme()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Settings may have changed the floating bubble (shown / ring buttons / haptics).
+        if (::floatingControls.isInitialized) floatingControls.applyPrefs()
     }
 
     override fun onPause() {
@@ -331,7 +338,7 @@ class MainActivity : AppCompatActivity() {
             // Never intercepts; only remembers the real request headers for HAR export.
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
                 RequestHeaders.remember(request)
-                return null
+                return RequestRules.intercept(request) // block / mock / delay rules; null = normal
             }
 
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
@@ -519,15 +526,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Live size shown on the floating Record button: the larger of the captured-body estimate
-    // (updates per request) and the real .har file size on disk (updates every few seconds).
+    // Live numbers on the floating recording pill: request count plus size, the larger of the
+    // captured-body estimate (updates per request) and the real .har file size on disk (a few
+    // seconds behind). Also warns once when the session gets close to its limit.
     private fun observeHarSize() {
         lifecycleScope.launch {
+            var warned = false
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 HarRecorder.status
-                    .combine(HarRecorder.fileBytes) { s, file -> maxOf(s.bytes, file) }
+                    .combine(HarRecorder.fileBytes) { st, file -> Triple(maxOf(st.bytes, file), st.entries, st.nearLimit) }
                     .distinctUntilChanged()
-                    .collect { floatingControls.onSize(it) }
+                    .collect { (bytes, count, near) ->
+                        val warn = near && HarOptions.warnNearLimit
+                        floatingControls.onSize(bytes, count, warn)
+                        if (warn && !warned) {
+                            warned = true
+                            Toast.makeText(this@MainActivity, "HAR is almost full — pause and save it soon", Toast.LENGTH_LONG).show()
+                        } else if (!near) {
+                            warned = false
+                        }
+                    }
             }
         }
     }
@@ -551,14 +569,13 @@ class MainActivity : AppCompatActivity() {
         ToolsSheet(this, object : ToolsHost {
             override val isDesktopMode: Boolean get() = desktopMode
             override val currentTextZoom: Int get() = BrowserPrefs.textZoom(this@MainActivity)
-            override val isFloatingControls: Boolean get() = BrowserPrefs.floatingControls(this@MainActivity)
             override val pageUrl: String get() = currentUrl
             override fun changeDesktopMode(on: Boolean) = setDesktopMode(on)
             override fun changeTextZoom(percent: Int) {
                 BrowserPrefs.setTextZoom(this@MainActivity, percent)
                 binding.webView.settings.textZoom = percent
             }
-            override fun changeFloatingControls(on: Boolean) = setFloatingControlsEnabled(on)
+            override fun openSettings() = this@MainActivity.openSettings()
             override fun sharePage() = this@MainActivity.sharePage()
             override fun copyLink() {
                 if (hasPage()) copyToClipboard(currentUrl, "Link copied")
@@ -576,30 +593,48 @@ class MainActivity : AppCompatActivity() {
         binding.webView.reload()
     }
 
+    /**
+     * Floating "delete cookies" button: removes this site's cookies, local/session storage and
+     * IndexedDB, then hard reloads. Sites on the cookie whitelist are left untouched.
+     */
     private fun clearSiteCookiesAndReload() {
         if (!hasPage() || !currentUrl.startsWith("http")) {
             Toast.makeText(this, "Open a website first", Toast.LENGTH_SHORT).show()
             return
         }
-        CookieTools.clearSite(currentUrl) {
+        if (CookieTools.isWhitelisted(this, currentUrl)) {
+            Toast.makeText(this, "Cookies kept — this site is on your whitelist", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val url = currentUrl
+        CookieTools.clearSite(url) {
             runOnUiThread {
-                Toast.makeText(this, "Cookies deleted", Toast.LENGTH_SHORT).show()
-                hardReload()
+                clearSiteStorage(url)
+                Toast.makeText(this, "Cookies and site data deleted", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    /** Turning the pop-up on asks for storage access first when this Android version needs it. */
-    private fun setFloatingControlsEnabled(on: Boolean) {
-        if (!on) {
-            BrowserPrefs.setFloatingControls(this, false)
-            floatingControls.setEnabled(false)
-            return
+    /** Clears local storage, session storage and IndexedDB of [url]'s origin, then hard reloads. */
+    private fun clearSiteStorage(url: String) {
+        try {
+            val uri = Uri.parse(url)
+            val port = if (uri.port != -1) ":${uri.port}" else ""
+            WebStorage.getInstance().deleteOrigin("${uri.scheme}://${uri.host}$port")
+        } catch (_: Exception) {
+            // best effort
         }
-        ensureStoragePermission {
-            BrowserPrefs.setFloatingControls(this, true)
-            floatingControls.setEnabled(true)
-        }
+        // Session storage is per tab and can only be emptied from inside the page.
+        binding.webView.evaluateJavascript(
+            "try{localStorage.clear();sessionStorage.clear()}catch(e){};0"
+        ) { hardReload() }
+    }
+
+    private fun openSettings() {
+        startActivity(
+            Intent(this, SettingsActivity::class.java)
+                .putExtra(SettingsActivity.EXTRA_URL, currentUrl.takeIf { it.startsWith("http") })
+        )
     }
 
     /** Runs [then] straight away, or after the permission prompt (granted or not) on Android 9 and older. */

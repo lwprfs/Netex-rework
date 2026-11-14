@@ -43,6 +43,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Settings"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Shares the cached .har file with other apps -->
         <provider
             android:name="androidx.core.content.FileProvider"

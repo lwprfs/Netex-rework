@@ -141,6 +141,18 @@ object HarOptions {
     var thirdParty: Boolean
         get() = bool("har_3p", true); set(v) = setBool("har_3p", v)
 
+    /**
+     * Record only the site the recording was started on. Unlike [thirdParty] (which follows
+     * whatever page is open), this pins the site at Record time; other sites are ignored.
+     * Stored under a non-"har_" key so presets don't reset it.
+     */
+    var siteOnly: Boolean
+        get() = bool("site_only", false); set(v) = setBool("site_only", v)
+
+    /** Warn (toast + amber pill) when a session is about to hit its limits. */
+    var warnNearLimit: Boolean
+        get() = bool("warn_near_limit", true); set(v) = setBool("warn_near_limit", v)
+
     /** Comma separated URL fragments; matching requests are skipped. */
     var excludeUrls: String
         get() = prefs?.getString("har_exclude", "") ?: ""
@@ -268,6 +280,7 @@ object HarOptions {
         val extra = buildList {
             if (redact) add("secrets redacted")
             if (!thirdParty) add("first-party only")
+            if (siteOnly) add("this site only")
             if (excludeUrls.isNotBlank()) add("custom exclusions")
         }
         return buildString {

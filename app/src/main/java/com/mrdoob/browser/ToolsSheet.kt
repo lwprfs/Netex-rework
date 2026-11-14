@@ -18,11 +18,10 @@ import kotlinx.coroutines.launch
 interface ToolsHost {
     val isDesktopMode: Boolean
     val currentTextZoom: Int
-    val isFloatingControls: Boolean
     val pageUrl: String
     fun changeDesktopMode(on: Boolean)
     fun changeTextZoom(percent: Int)
-    fun changeFloatingControls(on: Boolean)
+    fun openSettings()
     fun sharePage()
     fun copyLink()
     fun openExternal()
@@ -65,14 +64,11 @@ class ToolsSheet(
             host.changeDesktopMode(on)
         }
 
-        val floating = row(b.toolCardMain, R.drawable.ic_settings, "Floating controls", "Pop-up with record, reload and cookie buttons")
-        floating.optSwitch.visibility = View.VISIBLE
-        floating.optSwitch.isChecked = host.isFloatingControls
-        floating.root.setOnClickListener {
-            val on = !floating.optSwitch.isChecked
-            floating.optSwitch.isChecked = on
+        val settings = row(b.toolCardMain, R.drawable.ic_settings, "Settings", "Floating bubble, capture, request rules, cookies")
+        settings.optChevron.visibility = View.VISIBLE
+        settings.root.setOnClickListener {
             dialog.dismiss()
-            host.changeFloatingControls(on)
+            host.openSettings()
         }
 
         val cookies = row(b.toolCardMain, R.drawable.ic_cookie, "Cookies", "View, add and delete cookies")

@@ -114,6 +114,30 @@
         android:orientation="horizontal">
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/cookieExport"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Export JSON" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/cookieImport"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:text="Import JSON" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/cookieClearSite"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="0dp"

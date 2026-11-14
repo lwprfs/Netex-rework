@@ -17,6 +17,8 @@ import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 object HarExporter {
 
@@ -34,6 +36,30 @@ object HarExporter {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(Intent.createChooser(send, "Share HAR"))
+    }
+
+    /** Same as [share] but wraps the .har in a .zip first (much smaller for big captures). */
+    suspend fun shareZip(context: Context) {
+        val file = HarRecorder.flush() ?: return toast(context, NOTHING)
+        val zip = withContext(Dispatchers.IO) {
+            try {
+                val out = File(file.parentFile, file.nameWithoutExtension + ".zip")
+                ZipOutputStream(out.outputStream().buffered()).use { z ->
+                    z.putNextEntry(ZipEntry(file.name))
+                    file.inputStream().use { it.copyTo(z) }
+                    z.closeEntry()
+                }
+                out
+            } catch (e: Exception) { null }
+        } ?: return toast(context, "Couldn't create the zip")
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zip)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "application/zip"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newRawUri(zip.name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(send, "Share HAR (zip)"))
     }
 
     suspend fun saveToDownloads(context: Context) {

@@ -3,6 +3,8 @@ package com.mrdoob.browser
 import android.content.Context
 import android.net.Uri
 import android.webkit.CookieManager
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Thin wrapper over [CookieManager]. The WebView API can't enumerate every stored cookie, only
@@ -15,6 +17,7 @@ object CookieTools {
 
     private const val PREFS = "netex_tools"
     private const val KEY_SITES = "cookie_sites"
+    private const val KEY_KEEP = "cookie_keep_sites"
     private const val MAX_SITES = 30
 
     /** `example.com` / `http://x.y:8080/a?b` → `https://example.com/` style URL; null if unusable. */
@@ -119,5 +122,90 @@ object CookieTools {
         val updated = (listOf(host) + list.filter { it != host }).take(MAX_SITES)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY_SITES, updated.joinToString(",")).apply()
+    }
+
+    // --- per-site whitelist ("keep cookies") -------------------------------------------------
+
+    fun whitelist(context: Context): List<String> = context
+        .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getString(KEY_KEEP, "").orEmpty()
+        .split(',')
+        .filter { it.isNotEmpty() }
+
+    fun hostOf(url: String?): String? =
+        url?.let { try { Uri.parse(it).host } catch (_: Exception) { null } }
+            ?.lowercase()?.removePrefix("www.")?.takeIf { it.isNotEmpty() }
+
+    /** True for the whitelisted host itself and any of its subdomains. */
+    fun isWhitelisted(context: Context, url: String?): Boolean {
+        val host = hostOf(url) ?: return false
+        return whitelist(context).any { host == it || host.endsWith(".$it") }
+    }
+
+    fun setWhitelisted(context: Context, host: String, on: Boolean) {
+        val h = host.lowercase().removePrefix("www.")
+        if (h.isEmpty()) return
+        val list = whitelist(context).filter { it != h }
+        val updated = if (on) list + h else list
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_KEEP, updated.joinToString(",")).apply()
+    }
+
+    // --- JSON import / export --------------------------------------------------------------
+    // The WebView API only exposes name + value, so that is what an export contains.
+
+    fun exportJson(url: String): String {
+        val arr = JSONArray()
+        for (c in list(url)) arr.put(JSONObject().put("name", c.name).put("value", c.value))
+        return JSONObject()
+            .put("site", url)
+            .put("exportedAt", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date()))
+            .put("cookies", arr)
+            .toString(2)
+    }
+
+    /**
+     * Accepts `{"site":..., "cookies":[{name,value,path?,days?,secure?}]}` or a bare array.
+     * Returns how many cookies were added, or -1 if the text isn't valid JSON of that shape.
+     * [url] is where they are set (the JSON's own "site" is only used when [url] is null).
+     */
+    fun importJson(text: String, url: String?, done: (Int) -> Unit) {
+        val t = text.trim()
+        var target = url
+        val arr: JSONArray = try {
+            if (t.startsWith("[")) {
+                JSONArray(t)
+            } else {
+                val o = JSONObject(t)
+                if (target == null) target = normalizeSite(o.optString("site"))
+                o.getJSONArray("cookies")
+            }
+        } catch (_: Exception) {
+            done(-1)
+            return
+        }
+        val site = target ?: run { done(-1); return }
+        var added = 0
+        val jobs = ArrayList<JSONObject>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val name = o.optString("name")
+            if (name.isEmpty() || name.any { it == ';' || it == '=' || it.isWhitespace() }) continue
+            jobs += o
+        }
+        if (jobs.isEmpty()) { done(0); return }
+        var left = jobs.size
+        for (o in jobs) {
+            val days = if (o.has("days")) o.optInt("days").takeIf { it > 0 } else null
+            add(
+                site, o.optString("name"), o.optString("value").replace(";", ""),
+                o.optString("path", "/").ifEmpty { "/" }, days,
+                o.optBoolean("secure", site.startsWith("https://")), o.optBoolean("httpOnly", false)
+            ) {
+                added++
+                if (--left == 0) done(added)
+            }
+        }
     }
 }

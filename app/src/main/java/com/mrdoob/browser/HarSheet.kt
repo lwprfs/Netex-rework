@@ -265,6 +265,10 @@ class HarSheet(
             dialog.dismiss()
             activity.lifecycleScope.launch { HarExporter.share(activity) }
         }
+        exportRows += actionRow(card, R.drawable.ic_share, "Share as ZIP", "Compressed .zip containing the .har") {
+            dialog.dismiss()
+            activity.lifecycleScope.launch { HarExporter.shareZip(activity) }
+        }
         exportRows += actionRow(card, R.drawable.ic_download, "Save to Downloads", "Saved straight to Downloads/Netex") {
             activity.lifecycleScope.launch { HarExporter.saveToDownloads(activity) }
         }

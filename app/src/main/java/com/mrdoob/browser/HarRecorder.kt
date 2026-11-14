@@ -39,7 +39,9 @@ object HarRecorder {
         val maxBytes: Long = 0,
         val maxEntries: Int = 0,
         /** True when "stop when full" paused the session. */
-        val full: Boolean = false
+        val full: Boolean = false,
+        /** True once the session is at 80% of its request or size limit. */
+        val nearLimit: Boolean = false
     )
 
     data class Page(val id: String, val key: String, val url: String, val startedAt: Long, val title: String)
@@ -73,6 +75,7 @@ object HarRecorder {
     private var currentUrl: String? = null // latest page, tracked even while not recording
     private var currentKey: String? = null
     private var flushJob: Job? = null
+    private var pinnedSite: String? = null // "this site only": site the recording started on
 
     // io thread only.
     private var cacheDir: File? = null
@@ -89,6 +92,7 @@ object HarRecorder {
         synchronized(lock) {
             resetSession()
             state = State.RECORDING
+            pinnedSite = currentUrl?.let { siteOf(it) }?.takeIf { it.isNotEmpty() }
             currentUrl?.let { registerPage(it) }
             publish()
         }
@@ -139,7 +143,7 @@ object HarRecorder {
         if (url.isNullOrEmpty() || url == "about:blank") return
         synchronized(lock) {
             currentUrl = url
-            if (state == State.RECORDING) {
+            if (state == State.RECORDING && allowedBySiteOnly(url)) {
                 registerPage(url)
                 publish()
             }
@@ -193,6 +197,7 @@ object HarRecorder {
         val kind = HarOptions.Kind.from(r.kind, r.contentType)
         if (!HarOptions.recordKind(kind)) return null
         if (!HarOptions.thirdParty && !sameSite(r.url, currentUrl)) return null
+        if (!allowedBySiteOnly(r.url)) return null
         if (HarOptions.isExcluded(r.url)) return null
 
         // Response bodies.
@@ -245,6 +250,14 @@ object HarRecorder {
             responseHeaders = resHeaders,
             timings = if (HarOptions.timings) r.timings else null
         )
+    }
+
+    /** "This site only": everything must belong to the site the recording was started on. */
+    private fun allowedBySiteOnly(url: String): Boolean {
+        if (!HarOptions.siteOnly) return true
+        val pin = pinnedSite ?: return true
+        val site = siteOf(url)
+        return site.isEmpty() || site == pin
     }
 
     private fun sameSite(url: String, page: String?): Boolean {
@@ -315,7 +328,11 @@ object HarRecorder {
             bytes = totalChars,
             maxBytes = HarOptions.maxTotalBytes(),
             maxEntries = HarOptions.maxEntries,
-            full = full
+            full = full,
+            nearLimit = entries.isNotEmpty() && (
+                entries.size >= HarOptions.maxEntries * 8 / 10 ||
+                    totalChars >= HarOptions.maxTotalBytes() * 8 / 10
+                )
         )
     }
 

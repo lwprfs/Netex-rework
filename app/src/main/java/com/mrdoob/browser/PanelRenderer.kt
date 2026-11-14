@@ -77,6 +77,11 @@ class PanelRenderer(
             put("size", record.sizeBytes)
             put("requestId", record.requestId ?: "")
             put("pending", record.pending)
+            // For "Copy as cURL" and "Replay" in the Network tab.
+            put("reqHeaders", org.json.JSONArray().also { arr ->
+                record.requestHeaders.forEach { (k, v) -> arr.put(org.json.JSONArray().put(k).put(v)) }
+            })
+            put("reqBody", record.requestBody.take(20000))
         }.toString()
         afterShellLoaded {
             evalPanel("window.__panel.appendNetworkRow($payload)")

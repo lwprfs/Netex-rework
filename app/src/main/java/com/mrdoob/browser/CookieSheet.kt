@@ -1,6 +1,11 @@
 package com.mrdoob.browser
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.widget.EditText
 import android.text.Editable
 import android.text.TextWatcher
 import android.widget.Toast
@@ -40,8 +45,13 @@ class CookieSheet(
         b.cookieAdd.setOnClickListener { showAddDialog() }
         b.cookieClearSite.setOnClickListener {
             val url = site() ?: return@setOnClickListener toast("Enter a site first")
+            if (CookieTools.isWhitelisted(activity, url)) {
+                return@setOnClickListener toast("Cookies kept — this site is on your whitelist")
+            }
             CookieTools.clearSite(url) { activity.runOnUiThread { refresh() } }
         }
+        b.cookieExport.setOnClickListener { exportJson() }
+        b.cookieImport.setOnClickListener { showImportDialog() }
         b.cookieClearAll.setOnClickListener {
             MaterialAlertDialogBuilder(activity)
                 .setTitle("Clear all cookies?")
@@ -143,6 +153,61 @@ class CookieSheet(
             }
         }
         dialog.show()
+    }
+
+    private fun exportJson() {
+        val url = site() ?: return toast("Enter a site first")
+        val json = CookieTools.exportJson(url)
+        val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("cookies", json))
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Cookies for ${Uri.parse(url).host}")
+            putExtra(Intent.EXTRA_TEXT, json)
+        }
+        toast("Copied cookies as JSON")
+        activity.startActivity(Intent.createChooser(send, "Export cookies (JSON)"))
+    }
+
+    private fun showImportDialog() {
+        val url = site() ?: return toast("Enter a site first")
+        val input = EditText(activity).apply {
+            hint = "Paste cookie JSON here"
+            minLines = 6
+            maxLines = 12
+            gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            textSize = 13f
+            typeface = android.graphics.Typeface.MONOSPACE
+            val pad = activity.dp(16)
+            setPadding(pad, pad, pad, pad)
+        }
+        // Pre-fill from the clipboard when it already holds JSON.
+        val clip = (activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+            .primaryClip?.getItemAt(0)?.coerceToText(activity)?.toString().orEmpty().trim()
+        if (clip.startsWith("{") || clip.startsWith("[")) input.setText(clip)
+
+        MaterialAlertDialogBuilder(activity)
+            .setTitle("Import cookies for ${Uri.parse(url).host}")
+            .setMessage("Accepts an export from this app, or a list like [{\"name\":\"a\",\"value\":\"b\"}].")
+            .setView(input)
+            .setPositiveButton("Import") { _, _ ->
+                CookieTools.importJson(input.text.toString(), url) { added ->
+                    activity.runOnUiThread {
+                        when {
+                            added < 0 -> toast("That isn't valid cookie JSON")
+                            added == 0 -> toast("No cookies found to import")
+                            else -> {
+                                toast("Imported $added cookie${if (added == 1) "" else "s"}")
+                                CookieTools.rememberSite(activity, url)
+                                refreshSites()
+                                refresh()
+                            }
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun toast(msg: String) {
