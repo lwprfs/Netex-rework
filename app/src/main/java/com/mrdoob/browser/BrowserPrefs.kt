@@ -17,6 +17,7 @@ object BrowserPrefs {
     private const val KEY_JS = "javascript_enabled"
     private const val KEY_3P = "third_party_cookies"
     private const val KEY_UA = "custom_user_agent"
+    private const val KEY_NAV_CONFIRM = "navigation_confirmation"
 
     const val STARTUP_RESTORE = "restore"
     const val STARTUP_HOME = "home"
@@ -93,6 +94,10 @@ object BrowserPrefs {
     /** WebView's own default is off, so that stays the default here. */
     fun thirdPartyCookies(context: Context): Boolean = p(context).getBoolean(KEY_3P, false)
     fun setThirdPartyCookies(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_3P, on).apply() }
+
+    /** Ask before a link, script or history step takes the page to a different hostname (on by default). */
+    fun navigationConfirmation(context: Context): Boolean = p(context).getBoolean(KEY_NAV_CONFIRM, true)
+    fun setNavigationConfirmation(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_NAV_CONFIRM, on).apply() }
 
     /** Replaces the mobile user agent when not blank (desktop mode still wins while it is on). */
     fun customUserAgent(context: Context): String = p(context).getString(KEY_UA, "").orEmpty()

@@ -4,4 +4,8 @@
     <string name="url_hint">Search or type URL</string>
     <string name="loading">Loading</string>
     <string name="new_tab">New tab</string>
+    <string name="leave_site_title">Leave this website?</string>
+    <string name="leave_site_message">You are about to leave %1$s and open %2$s.</string>
+    <string name="leave_site_stay">Stay</string>
+    <string name="leave_site_leave">Leave</string>
 </resources>
