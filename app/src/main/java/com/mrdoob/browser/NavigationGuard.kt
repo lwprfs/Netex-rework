@@ -21,6 +21,18 @@ class NavigationGuard {
     var pending: Pending? = null
         private set
 
+    fun begin(url: String, label: String, sourceHost: String, kind: Kind, headers: Map<String, String> = emptyMap()): Pending =
+        Pending(++nextId, url, label, sourceHost, kind, headers).also { pending = it }
+
+    /** Returns the pending navigation only if [id] is still the current one, and clears it. */
+    fun take(id: Long): Pending? {
+        val p = pending?.takeIf { it.id == id } ?: return null
+        pending = null
+        return p
+    }
+
+    fun clearPending() { pending = null }
+
     /**
      * Set once the user chose Leave. Redirects that follow that approved load are not asked about
      * again. Cleared when the load finishes, fails, or another navigation starts.
