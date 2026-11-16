@@ -330,6 +330,7 @@
     var kind = kindOf(entry);
     if (kind === 'image') return harOpt('images') && harOpt('kind:image');
     if (!harOpt('kind:' + kind)) return false;
+    if (kind === 'document') return harOpt('bodies'); // main frame + iframes: real server HTML
     if (kind === 'font') return harOpt('fonts');
     if (kind === 'script' || kind === 'style') return harOpt('bodies');
     return kind === 'other' && harOpt('bodies') && /\.(css|js|mjs|json|svg)(\?|#|$)/i.test(entry.name);
@@ -350,62 +351,93 @@
   }
 
   var seenEntries = new Set();
+
+  // harOnly: entry is re-sent only for the HAR session (panel rows already exist).
+  function processEntry(entry, harOnly) {
+    if (isUninteresting(entry)) return;
+    // Sub-frames' navigation is already logged by the parent as an iframe resource.
+    if (entry.entryType === 'navigation' && window !== window.top) return;
+    var ct = classify(entry);
+    if (!ct) return;
+    var key = entry.entryType + '|' + entry.startTime + '|' + entry.name;
+    if (seenEntries.has(key)) return;
+    seenEntries.add(key);
+    if (seenEntries.size > 512) seenEntries.clear();
+    var body = '', full;
+    var isDoc = kindOf(entry) === 'document';
+    if (entry.entryType === 'navigation' && window === window.top) {
+      // Fallback only: the rendered DOM. Replaced below by the original response when it can be re-read.
+      try {
+        var html = document.documentElement.outerHTML;
+        body = clip(html);
+        full = harText(html);
+      } catch (e) {}
+    }
+    var base = {};
+    if (harOnly) base.harOnly = true;
+    if (body) base.body = body;
+    if (full !== undefined) base.harBody = full;
+    if (!(harOn() && wantsBody(entry, ct))) {
+      return postEntry(entry, ct, base);
+    }
+    // Re-read the (cached) response to get headers + body for the HAR.
+    queue.push(function (done) {
+      origFetch(entry.name, { cache: 'force-cache', credentials: isDoc ? 'same-origin' : 'omit' }).then(function (res) {
+        var rct = res.headers.get('content-type') || ct;
+        base.resHeaders = headerPairs(res.headers);
+        base.contentType = rct;
+        base.status = res.status || entry.responseStatus || 0;
+        // Binary documents (PDF, downloads...): keep metadata only, never decode as text.
+        if (isDoc && !/html|xml|text|json/i.test(rct)) { delete base.body; delete base.harBody; return; }
+        if (/^(image|font)\//i.test(rct) || /octet-stream|woff/i.test(rct)) {
+          var limitName = /^image\//i.test(rct) ? 'images' : 'fonts';
+          return res.blob().then(function (bl) { return blobToBase64(bl, limitName); }).then(function (b64) {
+            if (b64) { base.harBody = b64; base.harB64 = true; }
+          });
+        }
+        return res.text().then(function (t) {
+          base.body = clip(t);
+          var h = harText(t); base.harBody = h !== undefined ? h : t;
+          base.harB64 = false;
+          base.decoded = t.length;
+        });
+      }).catch(function () { /* CORS-blocked / not cached: keep what we have (DOM fallback or metadata) */ })
+        .then(function () { postEntry(entry, base.contentType || ct, base); done(); });
+    });
+    pump();
+  }
+
   try {
     var po = new PerformanceObserver(function (list) {
-      list.getEntries().forEach(function (entry) {
-        if (isUninteresting(entry)) return;
-        // Sub-frames' navigation is already logged by the parent as an iframe resource.
-        if (entry.entryType === 'navigation' && window !== window.top) return;
-        var ct = classify(entry);
-        if (!ct) return;
-        var key = entry.entryType + '|' + entry.startTime + '|' + entry.name;
-        if (seenEntries.has(key)) return;
-        seenEntries.add(key);
-        if (seenEntries.size > 512) seenEntries.clear();
-        var body = '', full;
-        if (entry.entryType === 'navigation' && window === window.top) {
-          try {
-            var html = document.documentElement.outerHTML;
-            body = clip(html);
-            full = harText(html);
-          } catch (e) {}
-        }
-        var base = {};
-        if (body) base.body = body;
-        if (full !== undefined) base.harBody = full;
-        if (!(entry.entryType === 'resource' && harOn() && wantsBody(entry, ct))) {
-          return postEntry(entry, ct, base);
-        }
-        // Re-read the (cached) response to get headers + body for the HAR.
-        queue.push(function (done) {
-          origFetch(entry.name, { cache: 'force-cache', credentials: 'omit' }).then(function (res) {
-            var rct = res.headers.get('content-type') || ct;
-            base.resHeaders = headerPairs(res.headers);
-            base.contentType = rct;
-            base.status = res.status || entry.responseStatus || 0;
-            if (/^(image|font)\//i.test(rct) || /octet-stream|woff/i.test(rct)) {
-              var limitName = /^image\//i.test(rct) ? 'images' : 'fonts';
-              return res.blob().then(function (bl) { return blobToBase64(bl, limitName); }).then(function (b64) {
-                if (b64) { base.harBody = b64; base.harB64 = true; }
-              });
-            }
-            return res.text().then(function (t) {
-              base.body = clip(t);
-              var h = harText(t); base.harBody = h !== undefined ? h : t;
-              base.harB64 = false;
-              base.decoded = t.length;
-            });
-          }).catch(function () { /* CORS-blocked: keep metadata only */ })
-            .then(function () { postEntry(entry, base.contentType || ct, base); done(); });
-        });
-        pump();
-      });
+      list.getEntries().forEach(function (entry) { processEntry(entry, false); });
     });
     // Two observes (each with buffered:true) — entries finalized before the async callback
     // runs would be lost otherwise. Dedupe handles any double-delivery.
     po.observe({ type: 'resource', buffered: true });
     po.observe({ type: 'navigation', buffered: true });
   } catch (e) { /* PerformanceObserver unavailable */ }
+
+  // Native calls this when a HAR recording starts: the page (and its document) usually finished
+  // loading before the user pressed Record, so replay what the browser already has buffered.
+  ns.rescanSelf = function () {
+    if (!harOn()) return;
+    seenEntries.clear();
+    try {
+      performance.getEntriesByType('navigation')
+        .concat(performance.getEntriesByType('resource'))
+        .forEach(function (e) { processEntry(e, true); });
+    } catch (e) { /* ignore */ }
+  };
+  ns.rescan = function () {
+    function visit(win) {
+      try {
+        var n = win.__netex;
+        if (n && n.rescanSelf) n.rescanSelf();
+        for (var i = 0; i < win.frames.length; i++) visit(win.frames[i]);
+      } catch (e) { /* cross-origin frame */ }
+    }
+    visit(window);
+  };
 
   var XHR = window.XMLHttpRequest;
   if (XHR) {

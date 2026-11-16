@@ -158,8 +158,6 @@ class MainActivity : AppCompatActivity() {
     private var desktopViewportScript: ScriptHandler? = null
 
     private var currentUrl: String = BLANK_URL
-    private val navGuard = NavigationGuard()
-    private var navDialog: androidx.appcompat.app.AlertDialog? = null
     private var currentTitle: String? = null
     private var currentTab = PanelRenderer.Tab.CONSOLE
     private var sourceDirty = true
@@ -304,9 +302,7 @@ class MainActivity : AppCompatActivity() {
         // onRenderProcessGone → recreate() and process death mid-fullscreen leave the
         // custom view attached to decorView; clean up so we don't leak.
         if (fullscreenView != null) exitFullscreen()
-        navDialog?.dismiss()
-        navDialog = null
-        navGuard.reset()
+        HarRecorder.onStarted = null
         super.onDestroy()
     }
 
@@ -367,6 +363,14 @@ class MainActivity : AppCompatActivity() {
         // Lets the network shim know whether a HAR recording is running (extra capture work only then).
         @SuppressLint("AddJavascriptInterface")
         webView.addJavascriptInterface(HarFlag(), HarFlag.JS_OBJECT_NAME)
+        // Recording usually starts after the page loaded: have the shim replay the buffered document/resources.
+        HarRecorder.onStarted = {
+            webView.post {
+                webView.evaluateJavascript(
+                    "try{window.__netex&&window.__netex.rescan&&window.__netex.rescan()}catch(e){}", null
+                )
+            }
+        }
 
         if (!docStartInjectionAvailable) {
             Toast.makeText(
@@ -412,12 +416,7 @@ class MainActivity : AppCompatActivity() {
         applyDesktopMode()
 
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                interceptNavigation(view, request)
-
-            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
-                if (request.isForMainFrame) navGuard.endApprovedChain()
-            }
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
 
             // Never intercepts; only remembers the real request headers for HAR export.
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
@@ -426,8 +425,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                // Another page started while the question was open: the answer would be stale.
-                navDialog?.dismiss()
                 setLoading(true)
                 siteIcon = null
                 updateFavicon()
@@ -448,7 +445,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageFinished(view: WebView, url: String?) {
-                navGuard.endApprovedChain()
                 setLoading(false)
                 updateNavState()
                 sourceDirty = true
@@ -982,8 +978,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun wireNavigation() {
-        binding.navBack.setOnClickListener { navigateHistory(-1) }
-        binding.navForward.setOnClickListener { navigateHistory(1) }
+        binding.navBack.setOnClickListener { if (binding.webView.canGoBack()) binding.webView.goBack() }
+        binding.navForward.setOnClickListener { if (binding.webView.canGoForward()) binding.webView.goForward() }
         binding.navDevtools.setOnClickListener { togglePanel() }
         binding.dragHandle.setOnClickListener { togglePanel() }
         binding.panelReload.setOnClickListener {
@@ -1146,84 +1142,7 @@ class MainActivity : AppCompatActivity() {
             looksLikeUrl(trimmed) -> "https://$trimmed"
             else -> SearchEngines.searchUrl(this, trimmed)
         }
-        // Address-bar loads are explicit, so they never ask and end any approved redirect chain.
-        navGuard.endApprovedChain()
         binding.webView.loadUrl(normalized)
-    }
-
-    /**
-     * Navigation Confirmation for links, scripts (location.href, window.open) and server redirects.
-     * WebView reports all of these here for the main frame; loadUrl(), reload and history steps are
-     * not reported, so the address bar is never intercepted and back / forward use [navigateHistory].
-     * Returns true to cancel the navigation until the user answers.
-     */
-    private fun interceptNavigation(view: WebView, request: WebResourceRequest): Boolean {
-        if (!request.isForMainFrame) return false
-        if (request.isRedirect) {
-            if (navGuard.inApprovedChain()) return false
-        } else {
-            navGuard.endApprovedChain()
-        }
-        if (!BrowserPrefs.navigationConfirmation(this)) return false
-        // A POST can't be replayed with loadUrl() (it would silently become a GET), so it is never held back.
-        if (!request.method.equals("GET", ignoreCase = true)) return false
-        val url = request.url.toString()
-        if (!NavigationGuard.crossesSite(view.url, url)) return false
-        // A question is already open: drop the newcomer so only the dialog's own destination can proceed.
-        if (navGuard.pending != null) return true
-        val fromHost = NavigationGuard.hostOf(view.url) ?: return false
-        confirmLeave(navGuard.begin(url, NavigationGuard.labelOf(url), fromHost,
-            NavigationGuard.Kind.LOAD, request.requestHeaders.orEmpty()))
-        return true
-    }
-
-    private fun navigateHistory(delta: Int) {
-        val webView = binding.webView
-        if (if (delta < 0) !webView.canGoBack() else !webView.canGoForward()) return
-        if (navGuard.pending != null) return
-        if (BrowserPrefs.navigationConfirmation(this)) {
-            val list = webView.copyBackForwardList()
-            val from = list.currentItem?.url
-            val target = list.getItemAtIndex(list.currentIndex + delta)?.url
-            if (target != null && NavigationGuard.crossesSite(from, target)) {
-                val fromHost = NavigationGuard.hostOf(from) ?: return
-                confirmLeave(navGuard.begin(target, NavigationGuard.labelOf(target), fromHost,
-                    if (delta < 0) NavigationGuard.Kind.BACK else NavigationGuard.Kind.FORWARD))
-                return
-            }
-        }
-        webView.goBackOrForward(delta)
-    }
-
-    private fun confirmLeave(pending: NavigationGuard.Pending) {
-        if (isFinishing || isDestroyed) { navGuard.clearPending(); return }
-        navDialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.leave_site_title)
-            .setMessage(getString(R.string.leave_site_message, NavigationGuard.labelOf("https://${pending.sourceHost}"), pending.destinationLabel))
-            .setNegativeButton(R.string.leave_site_stay) { _, _ -> navGuard.take(pending.id) }
-            .setPositiveButton(R.string.leave_site_leave) { _, _ -> proceedWith(pending.id) }
-            .setOnCancelListener { navGuard.take(pending.id) } // back button / tap outside = Stay
-            .setOnDismissListener { navGuard.take(pending.id); navDialog = null }
-            .show()
-    }
-
-    private fun proceedWith(id: Long) {
-        val p = navGuard.take(id) ?: return
-        val webView = binding.webView
-        when (p.kind) {
-            NavigationGuard.Kind.LOAD -> {
-                navGuard.approveChain()
-                webView.loadUrl(p.url, p.headers)
-            }
-            else -> {
-                val delta = if (p.kind == NavigationGuard.Kind.BACK) -1 else 1
-                val list = webView.copyBackForwardList()
-                // History moved while the dialog was open: don't jump to the wrong entry.
-                if (list.getItemAtIndex(list.currentIndex + delta)?.url != p.url) return
-                navGuard.approveChain()
-                webView.goBackOrForward(delta)
-            }
-        }
     }
 
     private fun looksLikeUrl(input: String): Boolean {
@@ -1253,7 +1172,7 @@ class MainActivity : AppCompatActivity() {
                 } else if (fullscreenView != null) {
                     exitFullscreen()
                 } else if (binding.webView.canGoBack()) {
-                    navigateHistory(-1)
+                    binding.webView.goBack()
                 } else {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()

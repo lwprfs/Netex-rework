@@ -53,6 +53,9 @@ object HarRecorder {
 
     val isRecording: Boolean get() = state == State.RECORDING
 
+    /** Set by the activity: asks the page to replay already-loaded requests (document, images...) into a new recording. */
+    @Volatile var onStarted: (() -> Unit)? = null
+
     private val lock = Any()
     private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "har-io").apply { isDaemon = true } }
         .asCoroutineDispatcher()
@@ -97,6 +100,7 @@ object HarRecorder {
             publish()
         }
         scope.launch { ownedFile = null } // the previous file stays in the cache untouched
+        onStarted?.invoke()
     }
 
     fun togglePause() {

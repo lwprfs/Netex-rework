@@ -21,7 +21,7 @@ class NetworkBridge(
     }
 
     private fun addRecord(obj: JSONObject) {
-        NetworkLog.add(
+        val record =
             NetworkLog.Record(
                 method = obj.optString("method"),
                 url = obj.optString("url"),
@@ -49,7 +49,8 @@ class NetworkBridge(
                 timings = obj.optJSONArray("timings")?.let { a -> LongArray(a.length()) { a.optLong(it, -1) } },
                 kind = obj.optString("kind")
             )
-        )
+        // harOnly: replayed for a HAR that started after the page loaded; the panel already has the row.
+        if (obj.optBoolean("harOnly", false)) HarRecorder.onRecord(record) else NetworkLog.add(record)
     }
 
     private fun pairs(arr: JSONArray?): List<Pair<String, String>> {
