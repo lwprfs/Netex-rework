@@ -275,7 +275,8 @@ object NetworkLog {
             synchronized(lock) {
                 for (line in lines) {
                     val o = try { JSONObject(line) } catch (_: Exception) { continue }
-                    val id = o.optString("id").ifEmpty { continue }
+                    val id = o.optString("id")
+                    if (id.isEmpty()) continue
                     val r = Record(
                         method = o.optString("m"), url = o.optString("u"), status = o.optInt("s"), body = "",
                         contentType = o.optString("ct").ifEmpty { null }, durationMs = o.optLong("d"),
