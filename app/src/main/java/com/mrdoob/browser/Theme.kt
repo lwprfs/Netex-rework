@@ -12,11 +12,6 @@ fun View.materialColor(@AttrRes attr: Int): Int = MaterialColors.getColor(this, 
 fun View.materialColorHex(@AttrRes attr: Int): String =
     String.format("#%06X", 0xFFFFFF and materialColor(attr))
 
-/**
- * One of the app's palette colours (R.color.nx_*), resolved through the current theme so that
- * Material You dynamic colours and the chosen accent apply. Status colours (recording, paused,
- * ok, idle) have no theme equivalent and keep their fixed values.
- */
 fun Context.nx(@ColorRes id: Int): Int {
     val attr = when (id) {
         R.color.nx_primary -> com.google.android.material.R.attr.colorPrimary

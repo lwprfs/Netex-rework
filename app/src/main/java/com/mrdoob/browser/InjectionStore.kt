@@ -6,11 +6,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/**
- * User scripts (JavaScript) and user styles (CSS) that run automatically on matching sites.
- * They are applied when a page finishes loading, in list order. WebView offers no reliable
- * "before the page runs" hook for these, so a script cannot change what the page does at start-up.
- */
 object InjectionStore {
 
     enum class Type { JS, CSS }
@@ -19,7 +14,7 @@ object InjectionStore {
         val id: String,
         val name: String,
         val type: Type,
-        /** Comma / space separated hosts (subdomains included). Empty or * = every site. */
+
         val domains: String,
         val code: String,
         val enabled: Boolean
@@ -53,7 +48,7 @@ object InjectionStore {
                         o.optString("d"), o.optString("c"), o.optBoolean("e", true)
                     )
                 }
-            } catch (_: Exception) { /* corrupt: start empty */ }
+            } catch (_: Exception) {  }
         }
         cache = list
         return list
@@ -81,7 +76,6 @@ object InjectionStore {
         if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))) emptyList()
         else items().filter { it.enabled && matches(it, url) }
 
-    /** JavaScript that applies [item] to the current page. */
     fun scriptFor(item: Item): String = when (item.type) {
         Type.JS -> "(function(){try{\n${item.code}\n}catch(e){console.error('[Netex script '+" +
             "${JSONObject.quote(item.name)}+']',e)}})();"

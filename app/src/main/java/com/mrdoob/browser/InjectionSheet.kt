@@ -20,18 +20,12 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.mrdoob.browser.databinding.ItemOptionRowBinding
 
-/** What the scripts / styles manager needs from the browser. */
 interface InjectionHost {
     val pageUrl: String
-    /** Runs JavaScript in the page that is open right now. */
+
     fun runOnPage(script: String)
 }
 
-/**
- * Manager for user scripts (JavaScript) and user styles (CSS): create, edit, enable, delete,
- * reorder (execution order = list order), run now / preview on the open page, and choose the
- * sites they apply to.
- */
 class InjectionSheet(
     private val activity: AppCompatActivity,
     private val host: InjectionHost
@@ -79,7 +73,7 @@ class InjectionSheet(
                 item.name.ifEmpty { "Untitled" }, "${item.type.name} · $where")
             r.optSwitch.visibility = View.VISIBLE
             r.optSwitch.isChecked = item.enabled
-            // The switch toggles; tapping the row edits; long-press opens more actions.
+
             r.optSwitch.setOnClickListener {
                 save(items.toMutableList().also { it[index] = item.copy(enabled = r.optSwitch.isChecked) })
             }
@@ -200,7 +194,7 @@ class InjectionSheet(
                 dialog.dismiss()
                 render()
             }
-            // Preview without saving; stays until the page reloads.
+
             dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
                 if (code.text.isBlank()) code.error = "Enter some code" else runNow(build())
             }

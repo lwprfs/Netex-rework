@@ -7,15 +7,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 
-/**
- * Network test tools applied to every request the page WebView makes:
- *  - BLOCK: the request fails with a 403 (handy to test how a page copes without a tracker/API).
- *  - MOCK:  the request is answered locally with a status, content type and body you choose.
- *  - Delay: every request waits [delayMs] before it is sent (a simple "slow network").
- *
- * A rule's pattern is matched against the full URL, case-insensitively. `*` matches anything,
- * otherwise the pattern just has to appear in the URL (e.g. `analytics` or `*.png`).
- */
 object RequestRules {
 
     enum class Action { BLOCK, MOCK }
@@ -84,7 +75,7 @@ object RequestRules {
                     )
                 }
             } catch (_: Exception) {
-                // corrupt data: start empty
+
             }
         }
         cache = list
@@ -95,18 +86,17 @@ object RequestRules {
     private fun toRegex(pattern: String): Regex {
         val p = pattern.trim()
         val body = p.split('*').joinToString(".*") { Regex.escape(it) }
-        // The pattern may appear anywhere in the URL; `*` stands for any text.
+
         return Regex(".*$body.*", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     }
 
-    /** Called from WebViewClient.shouldInterceptRequest (a background thread). null = let it through. */
     fun intercept(request: WebResourceRequest): WebResourceResponse? {
         val url = request.url.toString()
         if (!url.startsWith("http://") && !url.startsWith("https://")) return null
 
         val delay = delayMs
         if (delay > 0) {
-            try { Thread.sleep(delay.toLong()) } catch (_: InterruptedException) { /* ignore */ }
+            try { Thread.sleep(delay.toLong()) } catch (_: InterruptedException) {  }
         }
 
         val rule = compiled.firstOrNull { it.first.matches(url) }?.second ?: return null

@@ -16,6 +16,8 @@ class NetworkBridge(
     override fun onMessage(obj: JSONObject) {
         when (obj.optString("type")) {
             "blob-response" -> onBlobResponse(obj.optString("requestId"), obj.optString("body"))
+            "hello" -> ProtectionEngine.onBridgeHello(obj.optBoolean("top", true))
+            "devtools-signal" -> ProtectionEngine.onPageSignal(obj)
             "" -> addRecord(obj)
         }
     }
@@ -49,8 +51,8 @@ class NetworkBridge(
                 timings = obj.optJSONArray("timings")?.let { a -> LongArray(a.length()) { a.optLong(it, -1) } },
                 kind = obj.optString("kind")
             )
-        // harOnly: replayed for a HAR that started after the page loaded; the panel already has the row.
-        if (obj.optBoolean("harOnly", false)) HarRecorder.onRecord(record) else NetworkLog.add(record)
+
+        if (obj.optBoolean("harOnly", false)) NetworkLog.addHarOnly(record) else NetworkLog.add(record)
     }
 
     private fun pairs(arr: JSONArray?): List<Pair<String, String>> {

@@ -12,7 +12,8 @@ class PanelBridge(
     private val onShare: (String, String) -> Unit,
     private val onBlock: (String) -> Unit,
     private val onPref: (String, String) -> Unit,
-    private val onReplay: (String, JSONObject) -> Unit
+    private val onReplay: (String, JSONObject) -> Unit,
+    private val onDevTools: (JSONObject) -> Unit
 ) : JsonMessageBridge(TAG) {
 
     companion object {
@@ -29,6 +30,7 @@ class PanelBridge(
             "block" -> onBlock(obj.optString("pattern"))
             "pref" -> onPref(obj.optString("key"), obj.optString("value"))
             "replay" -> onReplay(obj.optString("id"), obj)
+            "devtools" -> onDevTools(obj)
         }
     }
 }

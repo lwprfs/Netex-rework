@@ -5,14 +5,11 @@ import android.util.JsonWriter
 import java.io.Writer
 import java.time.Instant
 
-/** HAR 1.2 serialisation and the file-naming rules for exported recordings. */
 object HarBuilder {
 
     private const val MAX_NAME = 120
     private val UNSAFE = Regex("""[\\/:*?"<>|,\u0000-\u001F]""")
     private val SPACES = Regex("""\s+""")
-
-    // --- naming ----------------------------------------------------------------------
 
     private fun clean(s: String) = s.trim().replace(SPACES, "_").replace(UNSAFE, "_").trim('_', '.')
 
@@ -23,17 +20,11 @@ object HarBuilder {
 
     private fun segments(u: Uri): List<String> = u.pathSegments.filter { it.isNotBlank() }
 
-    /** Identity of a page: host + path, ignoring scheme, `www.`, query, fragment and trailing `/`. */
     fun pageKey(url: String): String {
         val u = Uri.parse(url)
         return host(u) + "/" + segments(u).joinToString("/")
     }
 
-    /**
-     * One page  → `example.com_blog_post-1`
-     * Many pages → `example.com,about,contact` (main site, then each page's name; the main
-     * site's own root page is represented by the first part). Spaces become `_`.
-     */
     fun fileBase(urls: List<String>): String {
         if (urls.isEmpty()) return "netex"
         val uris = urls.map { Uri.parse(it) }
@@ -59,8 +50,6 @@ object HarBuilder {
         }
         return name.take(MAX_NAME).ifEmpty { "netex" }
     }
-
-    // --- HAR -------------------------------------------------------------------------
 
     fun write(snap: HarRecorder.Snapshot, out: Writer) {
         val w = JsonWriter(out)
@@ -107,7 +96,7 @@ object HarBuilder {
         val pairs = ArrayList<Pair<String, String>>()
         try {
             for (n in uri.queryParameterNames) for (v in uri.getQueryParameters(n)) pairs += n to v
-        } catch (_: Exception) { /* opaque URI */ }
+        } catch (_: Exception) {  }
         writePairs(w, pairs)
     }
 
@@ -130,7 +119,6 @@ object HarBuilder {
         else -> ""
     }
 
-    /** `Cookie` request header → HAR cookie objects. */
     private fun writeCookies(w: JsonWriter, headers: List<Pair<String, String>>) {
         w.beginArray()
         val raw = headers.firstOrNull { it.first.equals("cookie", ignoreCase = true) }?.second.orEmpty()
@@ -172,7 +160,6 @@ object HarBuilder {
         w.name("bodySize").value(if (r.requestBody.isEmpty()) 0L else utf8Len(r.requestBody))
         w.endObject()
 
-        // Full body for HAR when the shim sent one, else the (possibly clipped) panel body.
         val text = if (r.harBody.isNotEmpty()) r.harBody else r.body
         val decoded = when {
             r.decodedSize >= 0 && (r.harBase64 || text.isEmpty()) -> r.decodedSize
@@ -220,6 +207,12 @@ object HarBuilder {
                 .name("wait").value(r.durationMs).name("receive").value(0L)
         }
         w.endObject()
+
+        if (r.navId != 0L) w.name("_navigationId").value(r.navId)
+        w.name("_captureQuality").value(if (r.capture == "native") "partial (WebView callbacks only)" else "page")
+        if (r.redirectHop) w.name("_redirectHop").value(true)
+        if (r.failed) w.name("_failed").value(true)
+        if (r.error.isNotEmpty()) w.name("_error").value(r.error)
         w.endObject()
     }
 }

@@ -38,7 +38,6 @@ object HarExporter {
         context.startActivity(Intent.createChooser(send, "Share HAR"))
     }
 
-    /** Same as [share] but wraps the .har in a .zip first (much smaller for big captures). */
     suspend fun shareZip(context: Context) {
         val file = HarRecorder.flush() ?: return toast(context, NOTHING)
         val zip = withContext(Dispatchers.IO) {
@@ -115,7 +114,7 @@ object HarExporter {
     }
 
     private fun copyToAppDownloads(context: Context, file: File): String? {
-        // Android 9 and older: the real Downloads folder, once the user granted storage access.
+
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE)
             == PackageManager.PERMISSION_GRANTED
         ) {
@@ -127,7 +126,7 @@ object HarExporter {
                     return "Downloads/Netex"
                 }
             } catch (_: Exception) {
-                // fall through to the app's own downloads folder
+
             }
         }
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return null

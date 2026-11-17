@@ -54,6 +54,7 @@ import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewFeature
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayout
+import com.mrdoob.browser.DevToolsPrefs.Flag
 import com.mrdoob.browser.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
@@ -66,8 +67,9 @@ import org.json.JSONObject
 
 private const val TAG = "MainActivity"
 private const val BLANK_URL = "about:blank"
-private const val PROGRESS_ALPHA = 80 // ~31% of 255
+private const val PROGRESS_ALPHA = 80
 private const val PREF_LAST_URL = "last_url"
+private const val PREF_CRASHED = "renderer_crashed"
 private val SHARE_URL_REGEX = Regex("""https?://\S+""")
 
 class MainActivity : AppCompatActivity() {
@@ -101,7 +103,8 @@ class MainActivity : AppCompatActivity() {
                 val result = withContext(Dispatchers.IO) { Replayer.run(req) }
                 panel.deliverReplay(id, result)
             }
-        }
+        },
+        onDevTools = { msg -> runOnUiThread { handleDevToolsAction(msg) } }
     )
     private val saveHarAs = registerForActivityResult(
         ActivityResultContracts.CreateDocument(HarExporter.MIME_SAVE)
@@ -109,7 +112,6 @@ class MainActivity : AppCompatActivity() {
         if (uri != null) lifecycleScope.launch { HarExporter.saveTo(this@MainActivity, uri) }
     }
 
-    // Floating pop-up (record / reload / cookies). Storage permission is only needed on Android 9-.
     private lateinit var floatingControls: FloatingControls
     private lateinit var findBar: FindInPage
     private var appearanceRev = 0
@@ -158,6 +160,9 @@ class MainActivity : AppCompatActivity() {
     private var desktopViewportScript: ScriptHandler? = null
 
     private var currentUrl: String = BLANK_URL
+    private var lastStartedNavId = 0L
+    private var lastInjectedNav = -1L
+    private var loopDialog: androidx.appcompat.app.AlertDialog? = null
     private var currentTitle: String? = null
     private var currentTab = PanelRenderer.Tab.CONSOLE
     private var sourceDirty = true
@@ -167,7 +172,7 @@ class MainActivity : AppCompatActivity() {
     private var preFullscreenOrientation: Int = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Accent colour / Material You dynamic colours (Settings → Appearance) before any view is built.
+
         Appearance.apply(this)
         appearanceRev = Appearance.revision(this)
         nightMask = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
@@ -212,6 +217,8 @@ class MainActivity : AppCompatActivity() {
         observeHarState()
         observeHarSize()
         observeConsoleLog()
+        observeProtection()
+        restoreNetworkPanel()
         wireUrlBar()
         wirePanelHeader()
         if (Appearance.rememberTab(this)) {
@@ -228,8 +235,7 @@ class MainActivity : AppCompatActivity() {
         binding.threePanelView.roundCorners(18)
         updateNavState()
         updateSecurityIcon()
-        // Reserve the edge-adjacent chrome buttons from Android's back-gesture region,
-        // otherwise a tap near the screen edge gets swallowed as a back swipe.
+
         excludeFromSystemGestures(binding.navBack)
         excludeFromSystemGestures(binding.threeLogoButton)
 
@@ -248,7 +254,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // Light <-> dark: rebuild so every view picks up the other palette.
+
         if ((newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK) != nightMask) {
             recreate()
             return
@@ -262,17 +268,16 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (Appearance.revision(this) != appearanceRev) {
-            recreate() // theme / dynamic colours / accent changed in Settings
+            recreate()
             return
         }
         applyAddressBarSize()
-        // Settings may have changed the floating bubble (shown / ring buttons / haptics).
+
         if (::floatingControls.isInitialized) floatingControls.applyPrefs()
         applyBrowserPrefs()
         if (::panel.isInitialized) panel.pushPrefs()
     }
 
-    /** Applies Settings → Browser (JavaScript, third-party cookies, user agent) to the live WebView. */
     private fun applyBrowserPrefs() {
         val web = binding.webView
         var reload = false
@@ -296,17 +301,22 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         val url = currentUrl.takeIf { it.isNotEmpty() && it != BLANK_URL }
         getPreferences(MODE_PRIVATE).edit().putString(PREF_LAST_URL, url).apply()
+        if (DevToolsPrefs.global(DevToolsPrefs.Flag.PRESERVE_RESTART)) {
+            NetworkLog.persist(this)
+            NavigationTracker.save(this)
+        } else {
+            NetworkLog.deletePersisted(this)
+            NavigationTracker.deletePersisted(this)
+        }
     }
 
     override fun onDestroy() {
-        // onRenderProcessGone → recreate() and process death mid-fullscreen leave the
-        // custom view attached to decorView; clean up so we don't leak.
+
         if (fullscreenView != null) exitFullscreen()
         HarRecorder.onStarted = null
         super.onDestroy()
     }
 
-    /** Page to open at launch, following Settings → Startup (restore last page / homepage / blank). */
     private fun startupUrl(): String? = when (BrowserPrefs.startupMode(this)) {
         BrowserPrefs.STARTUP_HOME -> BrowserPrefs.homepage(this).takeIf { it.isNotBlank() }
         BrowserPrefs.STARTUP_BLANK -> null
@@ -330,9 +340,7 @@ class MainActivity : AppCompatActivity() {
             Intent.ACTION_SEND -> {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
                 if (text.isEmpty()) null
-                // If the share is a "Check this out: https://..." style blob,
-                // pull the first URL out — otherwise feed the raw text to loadUrl
-                // (which routes plain text to search).
+
                 else SHARE_URL_REGEX.find(text)?.value ?: text
             }
             else -> null
@@ -360,10 +368,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Lets the network shim know whether a HAR recording is running (extra capture work only then).
         @SuppressLint("AddJavascriptInterface")
         webView.addJavascriptInterface(HarFlag(), HarFlag.JS_OBJECT_NAME)
-        // Recording usually starts after the page loaded: have the shim replay the buffered document/resources.
+
+        @SuppressLint("AddJavascriptInterface")
+        webView.addJavascriptInterface(DevToolsFlag(), DevToolsFlag.JS_OBJECT_NAME)
+
         HarRecorder.onStarted = {
             webView.post {
                 webView.evaluateJavascript(
@@ -401,7 +411,7 @@ class MainActivity : AppCompatActivity() {
         settings.mediaPlaybackRequiresUserGesture = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            // WebView checks system night mode itself; pages with their own dark theme are left alone.
+
             WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true)
         }
         settings.setSupportZoom(true)
@@ -416,12 +426,15 @@ class MainActivity : AppCompatActivity() {
         applyDesktopMode()
 
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                NavigationTracker.onShouldOverride(
+                    request.url.toString(), request.isForMainFrame, request.isRedirect, request.hasGesture()
+                )
 
-            // Never intercepts; only remembers the real request headers for HAR export.
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
                 RequestHeaders.remember(request)
-                return RequestRules.intercept(request) // block / mock / delay rules; null = normal
+                NavigationTracker.onIntercept(request)
+                return RequestRules.intercept(request)
             }
 
             override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
@@ -429,15 +442,25 @@ class MainActivity : AppCompatActivity() {
                 siteIcon = null
                 updateFavicon()
                 DetectionStore.reset()
-                // "Preserve log" keeps old rows and just marks the navigation; otherwise start clean.
-                if (BrowserPrefs.devFlag(this@MainActivity, "keep_network")) panel.markNavigation("network", url)
-                else NetworkLog.reset()
+
+                val started = NavigationTracker.onPageStarted(url)
+                if (started == null || started.first) {
+                    val host = DevToolsPrefs.siteKey(url)
+                    val type = started?.type ?: NavigationTracker.Type.LOAD
+                    if (DevToolsPrefs.preserveFor(type, host)) panel.markNavigation("network", url, started?.navId ?: 0)
+                    else NetworkLog.clearForNavigation(
+                        DevToolsPrefs.on(DevToolsPrefs.Flag.PRESERVE_FAILED, host),
+                        DevToolsPrefs.on(DevToolsPrefs.Flag.PRESERVE_DOCS, host)
+                    )
+                }
+                lastStartedNavId = started?.navId ?: 0
                 if (BrowserPrefs.devFlag(this@MainActivity, "keep_console")) panel.markNavigation("console", url)
                 else ConsoleLog.reset()
                 extensionRouter.onPageNavigationStarted()
                 setUrlBubbleProgress(0, animate = false)
-                if (!docStartInjectionAvailable) {
-                    // Racy fallback: best-effort injection before page scripts run.
+                if (!docStartInjectionAvailable && lastInjectedNav != lastStartedNavId) {
+
+                    lastInjectedNav = lastStartedNavId
                     view.evaluateJavascript(documentStartScript, null)
                 }
                 if (url != null && url != currentUrl) currentTitle = null
@@ -445,12 +468,14 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onPageFinished(view: WebView, url: String?) {
+                NavigationTracker.onPageFinished(url)
+                scheduleBridgeCheck(NavigationTracker.currentId(), url)
                 setLoading(false)
                 updateNavState()
                 sourceDirty = true
                 maybeRefreshSource()
                 BrowserLibrary.recordVisit(url, view.title)
-                // Scripts & styles from Menu → Scripts & styles that match this site.
+
                 for (item in InjectionStore.matching(url)) {
                     view.evaluateJavascript(InjectionStore.scriptFor(item), null)
                 }
@@ -460,14 +485,26 @@ class MainActivity : AppCompatActivity() {
                 syncUrlBar(url)
                 updateNavState()
                 HarRecorder.onPageVisited(url)
+                NavigationTracker.onVisited(url, isReload)
                 CookieTools.rememberSite(applicationContext, url)
-                // SPA route changes (history.pushState) skip onPageFinished — keep source honest.
+
                 sourceDirty = true
                 maybeRefreshSource()
             }
 
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+                NavigationTracker.onRequestFailed(request, 0, error.description?.toString().orEmpty().ifEmpty { "Network error ${error.errorCode}" })
+            }
+
+            override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: android.webkit.WebResourceResponse) {
+                NavigationTracker.onRequestFailed(request, errorResponse.statusCode, "")
+            }
+
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail?): Boolean {
                 Log.w(TAG, "WebView render process gone, recreating activity")
+
+                getPreferences(MODE_PRIVATE).edit().putBoolean(PREF_CRASHED, true).apply()
+                NavigationTracker.onRenderGone(detail?.didCrash() ?: false, currentUrl)
                 recreate()
                 return true
             }
@@ -544,8 +581,6 @@ class MainActivity : AppCompatActivity() {
             .show(WindowInsetsCompat.Type.systemBars())
     }
 
-    // Per the Screen Orientation API, lock() is only valid in fullscreen — rotating the
-    // whole browser otherwise would be hostile.
     private fun applyOrientationLock(type: String?) {
         if (fullscreenView == null) return
         val target = when (type) {
@@ -563,8 +598,6 @@ class MainActivity : AppCompatActivity() {
         setRequestedOrientationIfChanged(target)
     }
 
-    // setRequestedOrientation is not a no-op when the value is unchanged — it round-trips
-    // through ActivityClient. Pages can spam lock() during transitions; gate the write.
     private fun setRequestedOrientationIfChanged(value: Int) {
         if (requestedOrientation != value) requestedOrientation = value
     }
@@ -606,6 +639,8 @@ class MainActivity : AppCompatActivity() {
                             panel.appendNetworkRow(event.record, displayUrl)
                         }
                         NetworkLog.Event.Cleared -> panel.clearNetwork()
+                        is NetworkLog.Event.Trimmed -> panel.clearForNavigation(event.keepFailed, event.keepDocs)
+                        is NetworkLog.Event.Patched -> panel.patchNetworkRow(event.requestId, event.status, event.failed, event.error)
                     }
                 }
             }
@@ -624,9 +659,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Live numbers on the floating recording pill: request count plus size, the larger of the
-    // captured-body estimate (updates per request) and the real .har file size on disk (a few
-    // seconds behind). Also warns once when the session gets close to its limit.
     private fun observeHarSize() {
         lifecycleScope.launch {
             var warned = false
@@ -661,6 +693,138 @@ class MainActivity : AppCompatActivity() {
                 android.content.res.ColorStateList.valueOf(androidx.core.content.ContextCompat.getColor(this, color))
             binding.recBadge.visibility = View.VISIBLE
         }
+    }
+
+    private fun userNavigated(kind: String) {
+        NavigationTracker.noteUserAction(kind)
+        if (NavigationTracker.holding) releaseHold()
+    }
+
+    private fun releaseHold() {
+        ProtectionEngine.release()
+        binding.webView.resumeTimers()
+    }
+
+    private fun scheduleBridgeCheck(navId: Long, url: String?) {
+        if (navId == 0L || !BrowserPrefs.javaScriptEnabled(this) || !NavigationGuard.isWebUrl(url)) return
+        binding.webView.postDelayed({ ProtectionEngine.checkBridge(navId, url) }, 1500)
+    }
+
+    private fun observeProtection() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch {
+                    ProtectionEngine.ui.collect { ui ->
+                        when (ui) {
+                            is ProtectionEngine.Ui.Notice ->
+                                com.google.android.material.snackbar.Snackbar.make(binding.root, ui.text, 6000).apply {
+                                    if (ui.detailsAction) setAction("Details") {
+                                        openPanelTab(PanelRenderer.Tab.NETWORK)
+                                        handleDevToolsAction(JSONObject().put("action", "get-detection"))
+                                    }
+                                }.show()
+                            is ProtectionEngine.Ui.LoopWarning -> showLoopDialog(ui)
+                            is ProtectionEngine.Ui.ReinitBridge -> reinitBridge(ui.navId)
+                        }
+                    }
+                }
+                launch {
+                    kotlinx.coroutines.flow.merge(
+                        DevToolsPrefs.revision.map { 0 }, HarRecorder.status.map { 0 }, DevToolsEvents.revision.map { 0 }
+                    ).collect { pushDevStatus() }
+                }
+            }
+        }
+    }
+
+    private fun pushDevStatus() {
+        if (!::panel.isInitialized) return
+        val host = DevToolsPrefs.currentHost
+        val det = JSONObject(ProtectionEngine.detectionJson(host))
+        val o = JSONObject()
+            .put("enabled", DevToolsPrefs.on(Flag.ENABLED, host))
+            .put("auto", DevToolsPrefs.on(Flag.AUTO_MASTER, host))
+            .put("compat", host != null && DevToolsPrefs.compatActive(host))
+            .put("activated", if (host == null) 0 else DevToolsPrefs.activations(host).map { it.label }.distinct().size)
+            .put("loop", NavigationTracker.loopIndicator())
+            .put("recording", HarRecorder.status.value.state != HarRecorder.State.IDLE)
+            .put("recordingPersist", DevToolsPrefs.on(Flag.REC_CONTINUOUS, host))
+            .put("detection", if (det.optBoolean("found")) det.optString("confidence") else "none")
+        panel.setDevStatus(o.toString())
+    }
+
+    private fun showLoopDialog(ui: ProtectionEngine.Ui.LoopWarning) {
+        if (loopDialog?.isShowing == true) return
+        val seq = ui.state.sequence.joinToString("\n") { s ->
+            "#${s.navId} ${s.type.name.lowercase()}  ${UrlDisplay.shorten(s.url, s.url)}"
+        }
+        val note = "Netex cannot block a page that reloads itself with JavaScript; Stop refuses automatic " +
+            "navigations and pauses page timers until you navigate yourself. Logs and recording are kept either way."
+        loopDialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Navigation loop detected")
+            .setMessage("${ui.host} keeps navigating without you doing anything.\n\n$seq\n\n$note")
+            .setPositiveButton("Stop automatic navigation") { _, _ ->
+                ProtectionEngine.hold(currentUrl)
+                binding.webView.stopLoading()
+                binding.webView.pauseTimers()
+            }
+            .setNegativeButton("Continue") { _, _ -> NavigationTracker.dismissLoop() }
+            .setNeutralButton("Details") { _, _ ->
+                openPanelTab(PanelRenderer.Tab.NETWORK)
+                handleDevToolsAction(JSONObject().put("action", "get-nav"))
+            }
+            .show()
+    }
+
+    private fun reinitBridge(navId: Long) {
+        if (navId != NavigationTracker.currentId()) return
+        val js = "(function(){try{if(window.__netex&&window.__netex.hello){window.__netex.hello();return 'hello';}return 'missing';}catch(e){return 'error';}})()"
+        binding.webView.evaluateJavascript(js) { r ->
+            if (r != null && r.contains("missing")) binding.webView.evaluateJavascript(documentStartScript, null)
+        }
+    }
+
+    private fun restoreNetworkPanel() {
+        val crashed = getPreferences(MODE_PRIVATE).getBoolean(PREF_CRASHED, false)
+        if (crashed) getPreferences(MODE_PRIVATE).edit().putBoolean(PREF_CRASHED, false).apply()
+        val snap = NetworkLog.snapshot()
+        if (snap.isNotEmpty() && (NetworkLog.restoredFromDisk || DevToolsPrefs.on(Flag.PRESERVE_CONTEXT))) {
+            snap.forEach { panel.appendNetworkRow(it, UrlDisplay.shorten(it.url, it.url)) }
+        }
+        NetworkLog.markRestoredShown()
+        if (crashed) ProtectionEngine.onRecreatedAfterCrash()
+    }
+
+    private fun handleDevToolsAction(msg: JSONObject) {
+        val host = DevToolsPrefs.siteKey(currentUrl) ?: DevToolsPrefs.currentHost
+        when (msg.optString("action")) {
+            "set-preserve" -> DevToolsPrefs.userSet(Flag.PRESERVE_NAV, msg.optBoolean("on"), host)
+            "get-nav" -> panel.deliverDevTools("showNavHistory", NavigationTracker.snapshotJson())
+            "get-events" -> panel.deliverDevTools("showEvents", DevToolsEvents.toJson())
+            "clear-events" -> { DevToolsEvents.clear(); panel.deliverDevTools("showEvents", DevToolsEvents.toJson()) }
+            "export-events" -> shareText("Netex developer tools events", DevToolsEvents.exportText())
+            "clear-nav" -> NavigationTracker.clearHistory()
+            "get-detection" -> panel.deliverDevTools("showDetection", ProtectionEngine.detectionJson(host))
+            "stop-nav" -> {
+                ProtectionEngine.hold(currentUrl)
+                binding.webView.stopLoading()
+                binding.webView.pauseTimers()
+            }
+            "continue-nav" -> releaseHold()
+            "site-preserve" -> if (host != null) {
+                DevToolsPrefs.setSite(host, Flag.PRESERVE_NAV, true)
+                DevToolsPrefs.setSite(host, Flag.PRESERVE_RELOAD, true)
+                DevToolsPrefs.setSite(host, Flag.PRESERVE_REDIRECT, true)
+            }
+            "site-nav" -> if (host != null) {
+                DevToolsPrefs.setSite(host, Flag.NAV_TRACKING, true)
+                DevToolsPrefs.setSite(host, Flag.LOOP_DETECT, true)
+                DevToolsPrefs.setSite(host, Flag.REDIRECT_MONITOR, true)
+            }
+            "site-compat" -> if (host != null) DevToolsPrefs.setSite(host, Flag.COMPAT_ENABLED, true)
+            "open-settings" -> openSettings()
+        }
+        pushDevStatus()
     }
 
     private fun showToolsSheet() {
@@ -706,7 +870,6 @@ class MainActivity : AppCompatActivity() {
         if (show) binding.faviconIcon.setImageBitmap(siteIcon)
     }
 
-    /** Long-press on the lock, site icon or reload button: quick actions for the current page. */
     private fun showUrlActions(anchor: View) {
         anchor.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         val menu = android.widget.PopupMenu(this, anchor)
@@ -750,13 +913,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun hardReload() {
         binding.webView.clearCache(true)
+        userNavigated("reload")
         binding.webView.reload()
     }
 
-    /**
-     * Floating "delete cookies" button: removes this site's cookies, local/session storage and
-     * IndexedDB, then hard reloads. Sites on the cookie whitelist are left untouched.
-     */
     private fun clearSiteCookiesAndReload() {
         if (!hasPage() || !currentUrl.startsWith("http")) {
             Toast.makeText(this, "Open a website first", Toast.LENGTH_SHORT).show()
@@ -775,16 +935,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Clears local storage, session storage and IndexedDB of [url]'s origin, then hard reloads. */
     private fun clearSiteStorage(url: String) {
         try {
             val uri = Uri.parse(url)
             val port = if (uri.port != -1) ":${uri.port}" else ""
             WebStorage.getInstance().deleteOrigin("${uri.scheme}://${uri.host}$port")
         } catch (_: Exception) {
-            // best effort
+
         }
-        // Session storage is per tab and can only be emptied from inside the page.
+
         binding.webView.evaluateJavascript(
             "try{localStorage.clear();sessionStorage.clear()}catch(e){};0"
         ) { hardReload() }
@@ -818,7 +977,6 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    /** Runs [then] straight away, or after the permission prompt (granted or not) on Android 9 and older. */
     private fun ensureStoragePermission(then: () -> Unit) {
         val needed = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
@@ -839,7 +997,6 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent.createChooser(send, title.ifEmpty { "Share" }))
     }
 
-    /** "Block URL / domain" from the Network tab: adds a Block rule (manage them in Settings → Request rules). */
     private fun blockPattern(pattern: String) {
         val p = pattern.trim()
         if (p.isEmpty()) return
@@ -960,7 +1117,7 @@ class MainActivity : AppCompatActivity() {
             if (hasFocus) {
                 binding.securityIcon.setImageResource(R.drawable.ic_search)
                 binding.urlBar.setText(if (currentUrl == BLANK_URL) "" else currentUrl)
-                // Wait until ACTION_UP's cursor placement settles, otherwise it clears the selection.
+
                 binding.urlBar.post { binding.urlBar.selectAll() }
             } else {
                 updateSecurityIcon()
@@ -978,12 +1135,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun wireNavigation() {
-        binding.navBack.setOnClickListener { if (binding.webView.canGoBack()) binding.webView.goBack() }
-        binding.navForward.setOnClickListener { if (binding.webView.canGoForward()) binding.webView.goForward() }
+        binding.navBack.setOnClickListener { if (binding.webView.canGoBack()) { userNavigated("back"); binding.webView.goBack() } }
+        binding.navForward.setOnClickListener { if (binding.webView.canGoForward()) { userNavigated("forward"); binding.webView.goForward() } }
         binding.navDevtools.setOnClickListener { togglePanel() }
         binding.dragHandle.setOnClickListener { togglePanel() }
         binding.panelReload.setOnClickListener {
-            if (loading) binding.webView.stopLoading() else binding.webView.reload()
+            if (loading) { NavigationTracker.noteUserAction("stop"); binding.webView.stopLoading() }
+            else { userNavigated("reload"); binding.webView.reload() }
         }
         binding.panelReload.setOnLongClickListener { showUrlActions(it); true }
         binding.faviconIcon.setOnLongClickListener { showUrlActions(it); true }
@@ -1142,6 +1300,7 @@ class MainActivity : AppCompatActivity() {
             looksLikeUrl(trimmed) -> "https://$trimmed"
             else -> SearchEngines.searchUrl(this, trimmed)
         }
+        userNavigated("load")
         binding.webView.loadUrl(normalized)
     }
 
@@ -1155,7 +1314,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        // Bundled IANA TLD list; file extensions like ".js" / ".py" fall through to search.
+
         private var cachedTlds: Set<String>? = null
 
         private fun knownTlds(context: Context): Set<String> = cachedTlds ?: context
@@ -1192,11 +1351,11 @@ class MainActivity : AppCompatActivity() {
             panelAnimator?.cancel()
             startHeight = binding.bottomPanel.layoutParams.height
         }
-        // Y axis grows downward -> up-drag has negative dy -> panel grows.
+
         val onMove: (Float) -> Unit = { dy ->
             setPanelHeight((startHeight - dy.toInt()).coerceIn(0, maxPanelHeight()))
         }
-        // A barely-open panel snaps shut; otherwise it stays where released.
+
         val onEnd: (Float) -> Unit = {
             val h = binding.bottomPanel.layoutParams.height
             if (h in 1 until dp(72)) animatePanelTo(0)
@@ -1206,8 +1365,6 @@ class MainActivity : AppCompatActivity() {
         binding.chromeContainer.onDragEnd = onEnd
     }
 
-    // The page WebView keeps a minimum height: collapsed to zero, pages see a
-    // zero-sized viewport (WebGPU swapchains reject it outright).
     private fun maxPanelHeight(): Int {
         val minPageHeight = dp(96)
         return (binding.root.height - binding.chromeContainer.height - minPageHeight).coerceAtLeast(0)
@@ -1245,6 +1402,7 @@ class MainActivity : AppCompatActivity() {
         params.height = h
         p.layoutParams = params
         val open = h > 0
+        ProtectionEngine.setPanelOpen(open)
         if (open != lastPanelOpen) {
             lastPanelOpen = open
             if (open) binding.navDevtools.setColorFilter(

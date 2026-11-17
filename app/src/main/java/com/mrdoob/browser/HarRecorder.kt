@@ -15,16 +15,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.Executors
 
-/**
- * Records [NetworkLog] traffic into a HAR session that survives page navigations
- * (the Network tab itself is cleared on every navigation, the recording is not).
- *
- * What ends up in the session is controlled by [HarOptions]: request types, body and
- * header detail, MB limits, privacy filters and session caps.
- *
- * The session is mirrored to `cacheDir/har/<name>.har`. All file work runs on one
- * serial thread, so writes and deletes can never interleave.
- */
 object HarRecorder {
 
     enum class State { IDLE, RECORDING, PAUSED }
@@ -34,13 +24,13 @@ object HarRecorder {
         val entries: Int = 0,
         val pages: Int = 0,
         val fileName: String? = null,
-        /** Approximate size of stored bodies, and the configured cap for it. */
+
         val bytes: Long = 0,
         val maxBytes: Long = 0,
         val maxEntries: Int = 0,
-        /** True when "stop when full" paused the session. */
+
         val full: Boolean = false,
-        /** True once the session is at 80% of its request or size limit. */
+
         val nearLimit: Boolean = false
     )
 
@@ -53,7 +43,6 @@ object HarRecorder {
 
     val isRecording: Boolean get() = state == State.RECORDING
 
-    /** Set by the activity: asks the page to replay already-loaded requests (document, images...) into a new recording. */
     @Volatile var onStarted: (() -> Unit)? = null
 
     private val lock = Any()
@@ -64,23 +53,24 @@ object HarRecorder {
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status.asStateFlow()
 
-    // Size in bytes of the .har file as last written to the cache (0 until the first write).
     private val _fileBytes = MutableStateFlow(0L)
     val fileBytes: StateFlow<Long> = _fileBytes.asStateFlow()
 
-    // Guarded by `lock`.
     @Volatile private var state = State.IDLE
     private val pages = LinkedHashMap<String, Page>()
     private val entries = LinkedHashMap<String, Entry>()
     private var totalChars = 0L
     private var seq = 0
     private var full = false
-    private var currentUrl: String? = null // latest page, tracked even while not recording
+    private var currentUrl: String? = null
     private var currentKey: String? = null
     private var flushJob: Job? = null
-    private var pinnedSite: String? = null // "this site only": site the recording started on
+    private var pinnedSite: String? = null
 
-    // io thread only.
+    private val navPages = object : LinkedHashMap<Long, String>(16, 0.75f, false) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, String>?) = size > 500
+    }
+
     private var cacheDir: File? = null
     private var ownedFile: File? = null
 
@@ -90,7 +80,6 @@ object HarRecorder {
         scope.launch { cacheDir = dir }
     }
 
-    /** Starts a brand-new recording (and a new file). */
     fun start() {
         synchronized(lock) {
             resetSession()
@@ -99,7 +88,7 @@ object HarRecorder {
             currentUrl?.let { registerPage(it) }
             publish()
         }
-        scope.launch { ownedFile = null } // the previous file stays in the cache untouched
+        scope.launch { ownedFile = null }
         onStarted?.invoke()
     }
 
@@ -119,7 +108,6 @@ object HarRecorder {
         scheduleFlush()
     }
 
-    /** Ends the recording but keeps what was captured so it can still be exported. */
     fun stop() {
         synchronized(lock) {
             if (state == State.IDLE) return
@@ -129,7 +117,6 @@ object HarRecorder {
         scope.launch { writeCache() }
     }
 
-    /** Drops the session and deletes every cached HAR file. */
     fun clear() {
         synchronized(lock) {
             resetSession()
@@ -142,7 +129,6 @@ object HarRecorder {
         }
     }
 
-    /** Called for every committed main-frame URL (including SPA route changes). */
     fun onPageVisited(url: String?) {
         if (url.isNullOrEmpty() || url == "about:blank") return
         synchronized(lock) {
@@ -151,6 +137,77 @@ object HarRecorder {
                 registerPage(url)
                 publish()
             }
+        }
+    }
+
+    fun onNavigation(navId: Long, url: String) {
+        if (url.isEmpty() || url == "about:blank") return
+        synchronized(lock) {
+            currentUrl = url
+            if (state == State.RECORDING) {
+
+                if (!DevToolsPrefs.on(DevToolsPrefs.Flag.REC_CONTINUOUS, DevToolsPrefs.siteKey(url))) {
+                    state = State.PAUSED
+                    publish()
+                    return
+                }
+                if (allowedBySiteOnly(url)) {
+                    registerPage(url)
+                    currentPageId()?.let { navPages[navId] = it }
+                    publish()
+                }
+            }
+        }
+    }
+
+    fun onNativePatch(id: String, status: Int, failed: Boolean, error: String, headers: List<Pair<String, String>>) {
+        if (state == State.IDLE) return
+        synchronized(lock) {
+            val e = entries[id] ?: return
+            val r = e.record
+            entries[id] = e.copy(
+                record = r.copy(
+                    status = if (status > 0) status else r.status,
+                    failed = failed || r.failed,
+                    error = error.ifEmpty { r.error },
+                    responseHeaders = if (r.responseHeaders.isEmpty() && HarOptions.responseHeaders) headers else r.responseHeaders
+                )
+            )
+        }
+        scheduleFlush()
+    }
+
+    fun protectSession(reason: String): Boolean {
+        val has = synchronized(lock) { entries.isNotEmpty() }
+        if (!has) return false
+        scope.launch {
+            val f = writeCache() ?: return@launch
+            val dir = f.parentFile ?: return@launch
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+            try { f.copyTo(File(dir, "protected_${reason}_$stamp.har"), overwrite = true) } catch (_: Exception) { }
+            dir.listFiles { x -> x.name.startsWith("protected_") }
+                ?.sortedBy { it.lastModified() }?.dropLast(5)?.forEach { it.delete() }
+        }
+        return true
+    }
+
+    fun exportToDownloads(context: Context?): Boolean {
+        val ctx = context ?: return false
+        val has = synchronized(lock) { entries.isNotEmpty() }
+        if (!has) return false
+        CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main).launch { HarExporter.saveToDownloads(ctx) }
+        return true
+    }
+
+    fun recoverSession() {
+        if (state != State.IDLE) onStarted?.invoke()
+    }
+
+    fun pauseIfRecording() {
+        synchronized(lock) {
+            if (state != State.RECORDING) return
+            state = State.PAUSED
+            publish()
         }
     }
 
@@ -169,7 +226,7 @@ object HarRecorder {
             val key = record.requestId ?: "n${seq++}"
             val old = entries[key]
             if (old == null) {
-                // Paused: only requests that were already in flight may still complete.
+
                 if (state != State.RECORDING) return
                 if (HarOptions.stopWhenFull && isFull(weight(record))) {
                     state = State.PAUSED
@@ -179,7 +236,7 @@ object HarRecorder {
                 }
                 val started = if (record.startedAt > 0) record.startedAt
                 else System.currentTimeMillis() - record.durationMs
-                entries[key] = Entry(record, currentPageId(), started)
+                entries[key] = Entry(record, navPages[record.navId] ?: currentPageId(), started)
                 totalChars += weight(record)
                 evictIfNeeded()
                 publish()
@@ -191,27 +248,29 @@ object HarRecorder {
         scheduleFlush()
     }
 
-    /** Writes the session to the cache dir right now and returns the file (null if nothing recorded). */
     suspend fun flush(): File? = withContext(io) { writeCache() }
 
-    // --- capture options -------------------------------------------------------------
-
-    /** Applies the capture-detail options to one record; null drops it from the recording. */
     private fun prepare(r: NetworkLog.Record): NetworkLog.Record? {
         val kind = HarOptions.Kind.from(r.kind, r.contentType)
         if (!HarOptions.recordKind(kind)) return null
+        val host = DevToolsPrefs.siteKey(r.url)
+
+        if (r.capture == "native") {
+            if (r.isDocument && !DevToolsPrefs.on(DevToolsPrefs.Flag.REC_DOCS, host)) return null
+            if (r.redirectHop && !DevToolsPrefs.on(DevToolsPrefs.Flag.REC_REDIRECTS, host)) return null
+        }
+        if (r.isFailure && r.capture == "native" && !DevToolsPrefs.on(DevToolsPrefs.Flag.REC_FAILED, host)) return null
         if (!HarOptions.thirdParty && !sameSite(r.url, currentUrl)) return null
         if (!allowedBySiteOnly(r.url)) return null
         if (HarOptions.isExcluded(r.url)) return null
 
-        // Response bodies.
         var body = r.body
         var harBody = r.harBody
         if (r.harBase64) {
             val isImage = kind == HarOptions.Kind.IMAGE
             val allowed = if (isImage) HarOptions.images else HarOptions.fonts
             val limitMb = if (isImage) HarOptions.imageLimitMb else HarOptions.fontLimitMb
-            // base64 is ~4/3 the size of the raw bytes
+
             val cap = HarOptions.capChars(limitMb).toLong() * 4L / 3L
             if (!allowed || harBody.length.toLong() > cap) harBody = ""
             body = ""
@@ -224,13 +283,11 @@ object HarRecorder {
             if (harBody.length > cap) harBody = harBody.substring(0, cap)
         }
 
-        // Request payload.
         val reqBody = if (HarOptions.requestBodies) {
             val cap = HarOptions.capChars(HarOptions.requestBodyLimitMb)
             if (r.requestBody.length > cap) r.requestBody.substring(0, cap) else r.requestBody
         } else ""
 
-        // Headers & cookies.
         var reqHeaders = if (HarOptions.requestHeaders) r.requestHeaders else emptyList()
         var resHeaders = if (HarOptions.responseHeaders) r.responseHeaders else emptyList()
         if (!HarOptions.cookies) {
@@ -256,7 +313,6 @@ object HarRecorder {
         )
     }
 
-    /** "This site only": everything must belong to the site the recording was started on. */
     private fun allowedBySiteOnly(url: String): Boolean {
         if (!HarOptions.siteOnly) return true
         val pin = pinnedSite ?: return true
@@ -271,10 +327,9 @@ object HarRecorder {
         return a.isEmpty() || b.isEmpty() || a == b
     }
 
-    /** Registrable-domain-ish key: `cdn.example.com` and `www.example.com` both give `example.com`. */
     private fun siteOf(url: String): String {
         val host = (try { Uri.parse(url).host } catch (_: Exception) { null } ?: return "").lowercase()
-        if (host.all { it.isDigit() || it == '.' }) return host // IPv4
+        if (host.all { it.isDigit() || it == '.' }) return host
         val parts = host.split('.')
         if (parts.size <= 2) return host
         val last = parts[parts.size - 1]
@@ -286,12 +341,11 @@ object HarRecorder {
     private fun isFull(extra: Long): Boolean =
         entries.size >= HarOptions.maxEntries || totalChars + extra > HarOptions.maxTotalBytes()
 
-    // --- internals -----------------------------------------------------------------
-
     private fun resetSession() {
         _fileBytes.value = 0L
         pages.clear()
         entries.clear()
+        navPages.clear()
         totalChars = 0
         full = false
         currentKey = null
@@ -312,7 +366,7 @@ object HarRecorder {
     private fun weight(r: NetworkLog.Record): Long = (r.body.length + r.requestBody.length + r.harBody.length).toLong()
 
     private fun evictIfNeeded() {
-        if (HarOptions.stopWhenFull) return // paused before the limit instead
+        if (HarOptions.stopWhenFull) return
         val maxEntries = HarOptions.maxEntries
         val maxChars = HarOptions.maxTotalBytes()
         val iter = entries.entries.iterator()
@@ -375,7 +429,7 @@ object HarRecorder {
             tmp.delete()
             return null
         }
-        // The name follows the visited pages, so it can change between writes.
+
         if (owned != null && owned != target) owned.delete()
         ownedFile = target
         _fileBytes.value = target.length()

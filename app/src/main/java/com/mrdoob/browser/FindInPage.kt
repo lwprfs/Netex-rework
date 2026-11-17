@@ -16,11 +16,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 
-/**
- * Find-in-page bar floating at the top of the browser. Uses WebView's built-in find, which
- * highlights every match, scrolls to the active one and reports the match count. (WebView has no
- * case-sensitive option: matching is always case-insensitive.)
- */
 class FindInPage(private val parent: FrameLayout, private val webView: WebView) {
 
     private val context: Context = parent.context

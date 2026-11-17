@@ -31,7 +31,6 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 
-/** What the floating pop-up needs from the browser. */
 interface FloatingHost {
     fun hardReload()
     fun openHarSettings()
@@ -41,26 +40,6 @@ interface FloatingHost {
     fun shareHar()
 }
 
-/**
- * Draggable bubble that floats over the browser (this app only, never over other apps, so no
- * overlay permission is involved). Its action buttons open on an arc AROUND the bubble, on the
- * side that faces the middle of the screen. What it shows follows the HAR recorder state:
- *
- *  - idle, closed      -> gear bubble; tap opens the ring
- *  - idle, open        -> bubble turns into X (close); around it: Play, Reload, HAR settings,
- *                         Cookie settings, Delete cookies
- *  - recording         -> red pill with request count + live .har size; tap it to pause
- *                         (turns amber with a warning sign near the session limit)
- *  - paused, closed    -> amber gear bubble; tap opens the ring
- *  - paused, open      -> bubble turns into X (ends the session, keeps the data exportable);
- *                         around it: Resume, Save to Downloads, Share
- *
- * Optional ring buttons are chosen in Settings. The bubble snaps to the nearest screen edge when
- * released and remembers where it was left.
- *
- * Every circle is filled with a colour that tells its type/status; icon/text colour is picked
- * for contrast. Drag the bubble anywhere: the ring follows it.
- */
 class FloatingControls(
     private val parent: FrameLayout,
     private val host: FloatingHost
@@ -84,8 +63,6 @@ class FloatingControls(
     private val satellites = ArrayList<View>()
     private var animateRing = false
 
-    // Offset of the bubble from its home corner (top-right). The bubble always rests on a screen
-    // edge (tx is derived from [onLeft]); only the vertical offset is free.
     private var tx = 0f
     private var ty = BrowserPrefs.floatingY(context)
     private var onLeft = BrowserPrefs.floatingOnLeft(context)
@@ -97,14 +74,13 @@ class FloatingControls(
     private val ringGap = Math.toRadians(40.0)
 
     init {
-        // Keep everything on screen when the screen size changes (rotation, keyboard, panel).
+
         parent.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             clampBubble()
             layoutRing(animate = false)
         }
     }
 
-    /** Re-reads the settings (shown, ring buttons, haptics); redraws only when something changed. */
     fun applyPrefs() {
         haptics = BrowserPrefs.floatingHaptics(context)
         val on = BrowserPrefs.floatingControls(context)
@@ -123,7 +99,6 @@ class FloatingControls(
         render()
     }
 
-    /** Called whenever the HAR recorder changes state (from any place, not only this pop-up). */
     fun onHarState(newState: State) {
         if (newState == state) return
         expanded = false
@@ -131,7 +106,6 @@ class FloatingControls(
         render()
     }
 
-    /** Live request count + HAR size on the recording pill; amber with a warning near the limit. */
     fun onSize(bytes: Long, count: Int, near: Boolean) {
         sizeBytes = bytes
         requestCount = count
@@ -152,8 +126,6 @@ class FloatingControls(
         else -> String.format(java.util.Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
     }
 
-    // --- rendering ------------------------------------------------------------------------
-
     private fun render() {
         bubble?.let { parent.removeView(it) }
         satellites.forEach { parent.removeView(it) }
@@ -166,7 +138,7 @@ class FloatingControls(
             State.RECORDING -> {
                 val pill = sizePill {
                     HarRecorder.togglePause()
-                    onHarState(State.PAUSED) // show the gear right away
+                    onHarState(State.PAUSED)
                 }
                 sizeView = pill
                 onSize(sizeBytes, requestCount, nearLimit)
@@ -189,7 +161,7 @@ class FloatingControls(
                     host.shareHar()
                 })
             } else {
-                setBubble(gearButton(R.color.nx_paused)) // amber = paused
+                setBubble(gearButton(R.color.nx_paused))
             }
             State.IDLE -> if (expanded) {
                 setBubble(button(R.drawable.ic_close, "Close", R.color.nx_surface_variant) {
@@ -198,7 +170,7 @@ class FloatingControls(
                 })
                 addSatellite(button(R.drawable.ic_play, "Start recording", R.color.nx_ok, haptic = true) {
                     HarRecorder.start()
-                    onHarState(State.RECORDING) // collapse to the live-size pill right away
+                    onHarState(State.RECORDING)
                 })
                 if (BrowserPrefs.ITEM_RELOAD in items) {
                     addSatellite(button(R.drawable.ic_refresh, "Hard reload", R.color.nx_secondary_container) {
@@ -221,7 +193,7 @@ class FloatingControls(
                     })
                 }
             } else {
-                setBubble(gearButton(R.color.nx_primary_container)) // idle
+                setBubble(gearButton(R.color.nx_primary_container))
             }
         }
 
@@ -262,18 +234,15 @@ class FloatingControls(
 
     private fun addSatellite(view: View) {
         view.elevation = context.dp(6).toFloat()
-        // Positioned purely through translation from the parent's top-left corner.
+
         parent.addView(
             view,
             FrameLayout.LayoutParams(buttonSize, buttonSize, Gravity.TOP or Gravity.LEFT)
         )
-        view.visibility = View.INVISIBLE // shown once placed, so it never flashes in a corner
+        view.visibility = View.INVISIBLE
         satellites += view
     }
 
-    // --- ring placement ----------------------------------------------------------------------
-
-    /** Spreads the satellites on an arc around the bubble, on the side facing the screen centre. */
     private fun layoutRing(animate: Boolean) {
         val b = bubble ?: return
         if (satellites.isEmpty() || parent.width == 0 || b.width == 0) return
@@ -301,7 +270,7 @@ class FloatingControls(
             v.translationY = top - parent.paddingTop
             if (v.visibility != View.VISIBLE) v.visibility = View.VISIBLE
             if (play) {
-                // Pop out from the bubble's centre.
+
                 v.alpha = 0f
                 v.scaleX = 0.3f
                 v.scaleY = 0.3f
@@ -326,7 +295,7 @@ class FloatingControls(
         val minTy = (parent.paddingTop - b.top).toFloat()
         val maxTy = ((parent.height - parent.paddingBottom) - b.height - b.top).toFloat()
         val hi = maxOf(minTx, maxTx)
-        // At rest the bubble sits on its screen edge; while dragging / snapping it follows the finger.
+
         val wantX = if (isDragging || snapping) b.translationX else if (onLeft) minTx else maxTx
         b.translationX = wantX.coerceIn(minTx, hi)
         b.translationY = b.translationY.coerceIn(minTy, maxOf(minTy, maxTy))
@@ -334,7 +303,6 @@ class FloatingControls(
         ty = b.translationY
     }
 
-    /** After a drag: glide to the nearest left/right edge and remember the spot. */
     private fun snapToEdge() {
         val b = bubble ?: return
         if (parent.width == 0 || b.width == 0) return
@@ -364,7 +332,6 @@ class FloatingControls(
         }
     }
 
-    /** Lets the bubble be dragged; a tap (movement under the touch slop) still clicks it. */
     @SuppressLint("ClickableViewAccessibility")
     private fun attachDrag(v: View) {
         var downX = 0f
@@ -387,7 +354,7 @@ class FloatingControls(
                         dragging = true
                         isDragging = true
                         view.parent.requestDisallowInterceptTouchEvent(true)
-                        // Release the pressed state/ripple so no click fires after the drag.
+
                         val cancel = MotionEvent.obtain(ev)
                         cancel.action = MotionEvent.ACTION_CANCEL
                         view.onTouchEvent(cancel)
@@ -402,7 +369,7 @@ class FloatingControls(
                     dragging
                 }
                 else -> {
-                    // UP / CANCEL: swallow only if a drag was in progress, then snap to an edge.
+
                     val was = dragging
                     if (was) {
                         dragging = false
@@ -415,9 +382,6 @@ class FloatingControls(
         }
     }
 
-    // --- button factories ----------------------------------------------------------------------
-
-    /** Filled circle/pill background; returns it with the contrasting content colour. */
     private fun filled(@ColorRes fillRes: Int): Pair<RippleDrawable, Int> {
         val fill = context.nx(fillRes)
         val on = if (ColorUtils.calculateLuminance(fill) > 0.5) 0xFF1B1B21.toInt() else 0xFFFFFFFF.toInt()
@@ -453,14 +417,12 @@ class FloatingControls(
         if (haptics) v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
     }
 
-    /** Pill colours: red while recording, amber when the session is nearly full. */
     private fun stylePill(tv: TextView) {
         val (bg, on) = filled(if (nearLimit) R.color.nx_paused else R.color.nx_rec)
         tv.background = bg
         tv.setTextColor(on)
     }
 
-    /** Recording pill showing request count and live HAR size; tapping it pauses. */
     private fun sizePill(onClick: () -> Unit): TextView = TextView(context).apply {
         stylePill(this)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)

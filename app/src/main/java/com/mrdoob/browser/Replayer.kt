@@ -6,18 +6,11 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * "Edit and replay" for the Network tab. Sends the (possibly edited) request with a plain
- * HttpURLConnection, so it is not limited by the page's CORS rules and cookies are only sent when
- * the user explicitly asks for them. PATCH is sent as POST with X-HTTP-Method-Override, because
- * Android's HttpURLConnection refuses the PATCH verb.
- */
 object Replayer {
 
     private const val MAX_BODY = 1_000_000
     private val METHODS = setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
 
-    /** Blocking; call off the main thread. Returns the JSON delivered to the panel. */
     fun run(request: JSONObject): String {
         val started = System.currentTimeMillis()
         fun fail(message: String) = JSONObject().put("ok", false).put("error", message)

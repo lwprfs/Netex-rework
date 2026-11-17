@@ -3,7 +3,6 @@ package com.mrdoob.browser
 import android.content.Context
 import android.net.Uri
 
-/** Search engines used when the address bar text is not a URL. `%s` is replaced by the query. */
 object SearchEngines {
 
     data class Engine(val id: String, val name: String, val template: String)
@@ -14,7 +13,6 @@ object SearchEngines {
 
     const val CUSTOM_ID = "custom"
 
-    /** The first entry keeps Netex's original behaviour (DuckDuckGo "!ducky" jumps to the top result). */
     val BUILT_IN = listOf(
         Engine("ddg_first", "DuckDuckGo — open first result", "https://duckduckgo.com/?q=!ducky%20%s"),
         Engine("ddg", "DuckDuckGo", "https://duckduckgo.com/?q=%s"),
@@ -33,7 +31,6 @@ object SearchEngines {
         prefs(context).edit().putString(KEY_ENGINE, id).apply()
     }
 
-    /** A custom template must be http(s) and contain %s where the query goes. */
     fun isValidTemplate(template: String): Boolean {
         val t = template.trim()
         return (t.startsWith("https://") || t.startsWith("http://")) && t.contains("%s") && !t.contains(' ')

@@ -10,7 +10,6 @@ import android.widget.EditText
 import androidx.annotation.ColorRes
 import androidx.core.content.ContextCompat
 
-/** Clips a view (e.g. a WebView) to rounded corners. Unlike a background drawable this survives setBackgroundColor. */
 fun View.roundCorners(radiusDp: Int) {
     val radius = radiusDp * resources.displayMetrics.density
     outlineProvider = object : ViewOutlineProvider() {
@@ -26,7 +25,6 @@ fun Context.dp(value: Int): Int = (value * resources.displayMetrics.density).toI
 fun Context.colorHex(@ColorRes id: Int): String =
     String.format("#%06X", 0xFFFFFF and nx(id))
 
-/** Calls [onChange] after every edit (small replacement for core-ktx doAfterTextChanged). */
 fun EditText.onTextChanged(onChange: (String) -> Unit) {
     addTextChangedListener(object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}

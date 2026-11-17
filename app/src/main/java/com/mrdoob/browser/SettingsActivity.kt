@@ -47,11 +47,6 @@ import com.google.android.material.textfield.TextInputLayout
 import com.mrdoob.browser.databinding.ItemCategoryRowBinding
 import com.mrdoob.browser.databinding.ItemOptionRowBinding
 
-/**
- * Settings: a landing page of categories (with search) and one page per [SettingsCategory], all in
- * this one activity. Everything is saved immediately; the browser picks the changes up when this
- * screen closes. Rows carry stable ids from [SettingsCatalog] so search can open and highlight them.
- */
 class SettingsActivity : AppCompatActivity() {
 
     companion object {
@@ -59,6 +54,8 @@ class SettingsActivity : AppCompatActivity() {
         private const val STATE_CATEGORY = "category"
         private const val STATE_QUERY = "query"
         private const val STATE_LANDING_SCROLL = "landing_scroll"
+        private const val STATE_DEVPAGE = "dev_page"
+        private const val STATE_SITE = "dev_site"
         private const val MENU_SEARCH = 1
         private const val HIGHLIGHT_MS = 1400L
         private const val VALUE_MAX_WIDTH_DP = 150
@@ -74,6 +71,8 @@ class SettingsActivity : AppCompatActivity() {
     private var category: SettingsCategory? = null
     private var query = ""
     private var landingScroll = 0
+    private var devPage: DevToolsPrefs.Section? = null
+    private var siteHost: String? = null
     private var focusId: String? = null
     private val rows = HashMap<String, View>()
 
@@ -98,13 +97,16 @@ class SettingsActivity : AppCompatActivity() {
         Appearance.apply(this)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        // Settings can be restored on their own after the process died.
+
         HarOptions.init(applicationContext)
         RequestRules.init(applicationContext)
+        DevToolsPrefs.init(applicationContext)
         pageUrl = intent.getStringExtra(EXTRA_URL)
         category = SettingsCategory.fromId(savedInstanceState?.getString(STATE_CATEGORY))
         query = savedInstanceState?.getString(STATE_QUERY).orEmpty()
         landingScroll = savedInstanceState?.getInt(STATE_LANDING_SCROLL) ?: 0
+        devPage = DevToolsPrefs.Section.entries.firstOrNull { it.name == savedInstanceState?.getString(STATE_DEVPAGE) }
+        siteHost = savedInstanceState?.getString(STATE_SITE)
 
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         toolbar = MaterialToolbar(this).apply {
@@ -143,7 +145,7 @@ class SettingsActivity : AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            // The keyboard must never cover the search results.
+
             v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
             insets
         }
@@ -152,7 +154,7 @@ class SettingsActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 when {
                     category != null -> closeCategory()
-                    query.isNotEmpty() -> searchField.setText("") // first back clears the search
+                    query.isNotEmpty() -> searchField.setText("")
                     else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
                 }
             }
@@ -165,20 +167,32 @@ class SettingsActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_CATEGORY, category?.id)
         outState.putString(STATE_QUERY, query)
+        outState.putString(STATE_DEVPAGE, devPage?.name)
+        outState.putString(STATE_SITE, siteHost)
         outState.putInt(STATE_LANDING_SCROLL, if (category == null) scroll.scrollY else landingScroll)
     }
-
-    // --- Navigation ----------------------------------------------------------------------------
 
     private fun openCategory(target: SettingsCategory, focus: String? = null) {
         if (category == null) landingScroll = scroll.scrollY
         category = target
+        devPage = null
+        siteHost = null
+
+        if (target == SettingsCategory.DEVELOPER && focus != null) {
+            DevToolsPrefs.Flag.fromRowId(focus)?.let { devPage = it.section }
+        }
         focusId = focus
         hideKeyboard()
         render()
     }
 
     private fun closeCategory() {
+        if (category == SettingsCategory.DEVELOPER && (siteHost != null || devPage != null)) {
+            if (siteHost != null) siteHost = null else devPage = null
+            hideKeyboard()
+            render()
+            return
+        }
         category = null
         hideKeyboard()
         render(restoreScroll = landingScroll)
@@ -196,14 +210,14 @@ class SettingsActivity : AppCompatActivity() {
         WindowInsetsControllerCompat(window, content).hide(WindowInsetsCompat.Type.ime())
     }
 
-    /** Draws the current page. Only the page being shown is built, never the whole hierarchy. */
     private fun render(restoreScroll: Int = 0) {
         content.removeAllViews()
         rows.clear()
         val c = category
         searchLayout.visibility = if (c == null) View.VISIBLE else View.GONE
         searchItem?.isVisible = c != null
-        toolbar.title = c?.title ?: "Settings"
+        toolbar.title = if (c == SettingsCategory.DEVELOPER && siteHost != null) siteHost
+        else if (c == SettingsCategory.DEVELOPER && devPage != null) devPage?.title else c?.title ?: "Settings"
         when {
             c != null -> buildCategory(c)
             query.isNotBlank() -> buildResults()
@@ -216,7 +230,6 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    /** Runs once the page just built has been measured, so scroll positions and row offsets are real. */
     private fun afterLayout(block: () -> Unit) {
         content.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
@@ -226,7 +239,6 @@ class SettingsActivity : AppCompatActivity() {
         })
     }
 
-    /** After a dialog or toggle changed what a page shows: redraw it in place, keeping the scroll position. */
     private fun refresh() = render(restoreScroll = scroll.scrollY)
 
     private fun highlight(row: View) {
@@ -238,8 +250,6 @@ class SettingsActivity : AppCompatActivity() {
         row.background = ColorDrawable(row.materialColor(com.google.android.material.R.attr.colorSecondaryContainer))
         row.postDelayed({ row.background = original }, HIGHLIGHT_MS)
     }
-
-    // --- Landing page and search ---------------------------------------------------------------
 
     private fun buildSearchField(): TextInputLayout {
         val layout = TextInputLayout(this, null, com.google.android.material.R.attr.textInputOutlinedStyle)
@@ -265,7 +275,7 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         layout.addView(searchField)
-        // Attached after setText so restoring the query doesn't trigger a second render.
+
         searchField.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
@@ -346,8 +356,6 @@ class SettingsActivity : AppCompatActivity() {
         r.root.setOnClickListener { openCategory(c) }
         parent.addView(r.root)
     }
-
-    // --- Category pages ------------------------------------------------------------------------
 
     private fun buildCategory(c: SettingsCategory) {
         content.addView(TextView(this, null, 0, R.style.SheetSubtitle).apply {
@@ -506,7 +514,6 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        // One primary home per setting: these only link to it.
         section("Related settings")
         val related = card()
         navRow(related, null, R.drawable.ic_cookie, "Cookie management", "Keep cookies for chosen sites") {
@@ -518,17 +525,25 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun buildDevTools() {
+        val site = siteHost
+        val page = devPage
+        when {
+            site != null -> buildSiteProfile(site)
+            page != null -> buildDevSection(page)
+            else -> buildDevHub()
+        }
+    }
+
+    private fun buildDevHub() {
         section("Logs")
         val card = card()
         fun dev(key: String) = { BrowserPrefs.devFlag(this, key) }
         fun setDev(key: String) = { on: Boolean -> BrowserPrefs.setDev(this, key, on.toString()) }
         switchRow(card, "dev_keep_console", R.drawable.ic_list, "Preserve console log",
             "Keep console messages when the page navigates or reloads", dev("keep_console"), setDev("keep_console"))
-        switchRow(card, "dev_keep_network", R.drawable.ic_network, "Preserve network log",
-            "Keep requests when the page navigates or reloads", dev("keep_network"), setDev("keep_network"))
         switchRow(card, "dev_timestamps", R.drawable.ic_timer, "Console timestamps",
             "Show the time each console message arrived", dev("timestamps"), setDev("timestamps"))
-        hint("Also available as toggles inside the Console and Network tabs.")
+        hint("Preserve network log is under Network Protection. Both preserve switches are also available in the Console and Network tabs.")
 
         section("Console")
         val console = card()
@@ -537,6 +552,13 @@ class SettingsActivity : AppCompatActivity() {
             BrowserPrefs.setDev(this, "cmd_history", "[]")
             Toast.makeText(this, "Command history cleared", Toast.LENGTH_SHORT).show()
         }
+
+        section("Compatibility and protection")
+        val sections = card()
+        for (sec in DevToolsPrefs.Section.entries) {
+            navRow(sections, null, R.drawable.ic_shield, sec.title, sec.blurb) { devPage = sec; render() }
+        }
+        hint("Compatibility mode reduces interference from sites that react to developer tools. It is not a guaranteed bypass: some detection methods cannot be neutralised through WebView.")
 
         section("Related settings")
         val related = card()
@@ -548,13 +570,152 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun onOff(b: Boolean) = if (b) "On" else "Off"
+
+    private fun buildDevSection(sec: DevToolsPrefs.Section) {
+        if (sec == DevToolsPrefs.Section.ADVANCED) { buildDevAdvanced(); return }
+        val host = DevToolsPrefs.siteKey(pageUrl)
+        var box = card()
+        var lastGroup = ""
+        for (f in DevToolsPrefs.Flag.entries.filter { it.section == sec }) {
+            if (sec == DevToolsPrefs.Section.AUTO) {
+                val group = when {
+                    f == DevToolsPrefs.Flag.AUTO_MASTER -> ""
+                    f.key.startsWith("auto_rule") -> "Events that may trigger protection"
+                    else -> "Actions it may take"
+                }
+                if (group != lastGroup && group.isNotEmpty()) { section(group); box = card() }
+                lastGroup = group
+            }
+            val bits = ArrayList<String>()
+            if (f.description.isNotEmpty()) bits += f.description
+            bits += "${f.indicator} · Default: ${onOff(f.default)}"
+            if (host != null && DevToolsPrefs.source(f, host) != "Global") bits += "Now set by: ${DevToolsPrefs.source(f, host)}"
+            switchRow(box, f.rowId, iconFor(sec), f.title, bits.joinToString("\n"),
+                { DevToolsPrefs.global(f) }, { DevToolsPrefs.setGlobal(f, it) })
+        }
+        when (sec) {
+            DevToolsPrefs.Section.NETWORK -> hint("Failed and document requests are kept on navigation even when Preserve is off, unless you turn those two off.")
+            DevToolsPrefs.Section.NAVIGATION -> hint("Reload thresholds are in Advanced Settings. Only navigations nobody asked for (no tap, no Netex button) are counted.")
+            DevToolsPrefs.Section.ANTI -> hint("One indicator is never more than Low confidence. Medium needs two different indicators, High needs three including behaviour that changed the page.")
+            DevToolsPrefs.Section.JS -> hint("Instrumentation wraps page APIs (Function, timers, console.clear). Sites can notice that. It only runs where you enable it.")
+            DevToolsPrefs.Section.RECORDING -> hint("Native entries are partial: WebView does not expose redirect statuses or response bodies. They are labelled that way in the Network tab and in the HAR (_captureQuality).")
+            DevToolsPrefs.Section.AUTO -> hint("Automatic protections apply to the current session only and never change your saved settings. A website profile always wins.")
+            else -> Unit
+        }
+        section("Reset")
+        val reset = card()
+        row(reset, null, R.drawable.ic_reset, "Reset ${sec.title} to defaults", "").root.setOnClickListener {
+            confirmDialog("Reset ${sec.title}?", "Switches on this page go back to their defaults.", "Reset") {
+                DevToolsPrefs.resetSection(sec); refresh()
+            }
+        }
+    }
+
+    private fun iconFor(sec: DevToolsPrefs.Section): Int = when (sec) {
+        DevToolsPrefs.Section.NETWORK, DevToolsPrefs.Section.RECORDING -> R.drawable.ic_network
+        DevToolsPrefs.Section.NAVIGATION -> R.drawable.ic_history
+        DevToolsPrefs.Section.ANTI -> R.drawable.ic_warning
+        DevToolsPrefs.Section.JS -> R.drawable.ic_code
+        DevToolsPrefs.Section.AUTO -> R.drawable.ic_shield
+        else -> R.drawable.ic_settings
+    }
+
+    private fun buildDevAdvanced() {
+        section("Thresholds and limits")
+        val nums = card()
+        for (n in DevToolsPrefs.Num.entries) {
+            valueRow(nums, "dt_num_${n.key}", R.drawable.ic_timer, n.title, n.description,
+                "${DevToolsPrefs.num(n)}${n.unit}") {
+                inputDialog(n.title, "${n.description} (${n.min} to ${n.max}${n.unit})",
+                    textField("${n.default}", DevToolsPrefs.num(n).toString(), number = true),
+                    neutral = "Default", onNeutral = { DevToolsPrefs.setNum(n, n.default); refresh() },
+                    validate = { v -> val x = v.trim().toIntOrNull(); if (x == null || x < n.min || x > n.max) "Enter ${n.min} to ${n.max}" else null }
+                ) { DevToolsPrefs.setNum(n, it.trim().toInt()); refresh() }
+            }
+        }
+        hint("Defaults: 3 loads in 10 s warns, 5 in 15 s activates loop protection, 8 in 30 s activates stronger protection.")
+
+        section("Website profiles")
+        val sites = card()
+        val current = DevToolsPrefs.siteKey(pageUrl)
+        if (current != null) {
+            valueRow(sites, null, R.drawable.ic_open, "This website", current, if (DevToolsPrefs.siteProfile(current).isEmpty()) "No overrides" else "${DevToolsPrefs.siteProfile(current).size} set") {
+                siteHost = current; render()
+            }
+        }
+        for (h in DevToolsPrefs.siteHosts()) {
+            if (h == current) continue
+            valueRow(sites, null, R.drawable.ic_open, h, "Tap to edit", "${DevToolsPrefs.siteProfile(h).size} set") { siteHost = h; render() }
+        }
+        navRow(sites, null, R.drawable.ic_add, "Add website", "Create a profile for a host name") {
+            inputDialog("Website", "Host name only, for example example.com", textField("example.com", ""),
+                validate = { if (DevToolsPrefs.siteKey("https://" + it.trim()) == null) "Not a valid host name" else null }
+            ) { siteHost = DevToolsPrefs.siteKey("https://" + it.trim()); render() }
+        }
+        hint("Order of precedence: website profile, then protections activated for the session, then the global setting.")
+
+        section("Share profiles")
+        val share = card()
+        row(share, null, R.drawable.ic_share, "Export profiles", "Share all website profiles as JSON").root.setOnClickListener {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"; putExtra(Intent.EXTRA_TEXT, DevToolsPrefs.exportProfiles())
+            }, "Export profiles"))
+        }
+        row(share, null, R.drawable.ic_download, "Import profiles", "Paste JSON exported from Netex").root.setOnClickListener {
+            inputDialog("Import profiles", "Paste the exported JSON. Profiles for the same website are merged.",
+                textField("{ … }", "", multiline = true), validate = { if (it.isBlank()) "Paste the JSON" else null }
+            ) {
+                try {
+                    val n = DevToolsPrefs.importProfiles(it)
+                    Toast.makeText(this, "Imported $n website${if (n == 1) "" else "s"}", Toast.LENGTH_SHORT).show()
+                    refresh()
+                } catch (e: IllegalArgumentException) {
+                    Toast.makeText(this, e.message ?: "Import failed", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+
+        section("Reset")
+        val reset = card()
+        row(reset, null, R.drawable.ic_reset, "Reset all Developer Tools settings", "Switches, thresholds and limits (website profiles stay)").root.setOnClickListener {
+            confirmDialog("Reset everything?", "All Developer Tools switches, thresholds and limits return to defaults.", "Reset") {
+                DevToolsPrefs.resetAll(); refresh()
+            }
+        }
+    }
+
+    private fun buildSiteProfile(host: String) {
+        section("Protections for $host")
+        val card = card()
+        for (f in DevToolsPrefs.Flag.entries.filter { DevToolsPrefs.siteScoped(it) }) {
+            val v = DevToolsPrefs.siteValue(host, f)
+            val state = when (v) { null -> "Global (${onOff(DevToolsPrefs.global(f))})"; true -> "On"; false -> "Off" }
+            valueRow(card, f.rowId, iconFor(f.section), f.title, "${f.indicator} · ${f.section.title}", state) {
+                val labels = arrayOf("Use global setting (${onOff(DevToolsPrefs.global(f))})", "Always on for this website", "Always off for this website")
+                choiceDialog(f.title, labels, when (v) { null -> 0; true -> 1; false -> 2 }) { which ->
+                    DevToolsPrefs.setSite(host, f, when (which) { 1 -> true; 2 -> false; else -> null })
+                    refresh()
+                }
+            }
+        }
+        hint("Settings here override the global ones for $host only. Other websites are not affected.")
+        section("Profile")
+        val actions = card()
+        row(actions, null, R.drawable.ic_reset, "Reset this website", "Remove every override").root.setOnClickListener {
+            confirmDialog("Reset $host?", "All overrides for this website are removed.", "Reset") {
+                DevToolsPrefs.resetSite(host); refresh()
+            }
+        }
+    }
+
     private fun buildFloating() {
         section("Bubble")
         val card = card()
         switchRow(card, "float_main", R.drawable.ic_settings, "Floating bubble",
             "Record, reload and cookie buttons on top of the browser (this app only)",
             { BrowserPrefs.floatingControls(this) }, { BrowserPrefs.setFloatingControls(this, it) },
-            // Asks for storage access first on Android 9 and older (to save into Downloads).
+
             beforeEnable = { proceed -> ensureStoragePermission(proceed) })
         switchRow(card, "float_haptics", R.drawable.ic_play, "Haptic feedback",
             "A small tap on Play, Pause, Resume and Delete cookies",
@@ -651,8 +812,6 @@ class SettingsActivity : AppCompatActivity() {
         hint("\"Clear all cookies\" in the cookie sheet still removes everything. Import / export JSON is in the cookie sheet (Menu → Cookies).")
     }
 
-    // --- Dialogs -------------------------------------------------------------------------------
-
     private fun choiceDialog(title: String, labels: Array<String>, checked: Int, onPick: (Int) -> Unit) {
         MaterialAlertDialogBuilder(this)
             .setTitle(title)
@@ -695,7 +854,6 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun TextInputLayout.text() = editText?.text?.toString().orEmpty()
 
-    /** Single-field editor. [validate] returns an error message or null; Save stays open until it passes. */
     private fun inputDialog(
         title: String, message: String?, field: TextInputLayout,
         neutral: String? = null, onNeutral: () -> Unit = {},
@@ -859,8 +1017,6 @@ class SettingsActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    // --- Rows and layout helpers ---------------------------------------------------------------
-
     private fun ensureStoragePermission(then: () -> Unit) {
         val needed = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
@@ -880,7 +1036,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun hint(text: String) {
         content.addView(TextView(this, null, 0, R.style.SheetHint).apply {
             this.text = text
-            setPadding(dp(6), dp(8), dp(6), 0) // style margins don't apply to code-built views
+            setPadding(dp(6), dp(8), dp(6), 0)
         })
     }
 
@@ -911,7 +1067,7 @@ class SettingsActivity : AppCompatActivity() {
         r.optValue.text = value
         r.optValue.maxLines = 1
         r.optValue.ellipsize = TextUtils.TruncateAt.END
-        r.optValue.maxWidth = dp(VALUE_MAX_WIDTH_DP) // a long homepage must not squeeze the title
+        r.optValue.maxWidth = dp(VALUE_MAX_WIDTH_DP)
     }
 
     private fun navRow(parent: ViewGroup, id: String?, @DrawableRes icon: Int, title: String, subtitle: String, onClick: () -> Unit): ItemOptionRowBinding {
@@ -927,10 +1083,6 @@ class SettingsActivity : AppCompatActivity() {
         return r
     }
 
-    /**
-     * The whole row toggles; the switch itself isn't clickable, so a tap can't fire twice.
-     * [beforeEnable] lets a setting ask for something (a permission) before turning on.
-     */
     private fun switchRow(
         parent: ViewGroup, id: String?, @DrawableRes icon: Int, title: String, subtitle: String,
         get: () -> Boolean, set: (Boolean) -> Unit,

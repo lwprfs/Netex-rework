@@ -7,10 +7,6 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
 
-/**
- * Browsing history and bookmarks, kept as small JSON files in the app's private storage.
- * Reads happen from memory; every change is written on a background thread.
- */
 object BrowserLibrary {
 
     data class Visit(val url: String, val title: String, val time: Long)
@@ -23,14 +19,13 @@ object BrowserLibrary {
     private val lock = Any()
     private var dir: File? = null
     private var loaded = false
-    private val history = ArrayList<Visit>() // newest first
-    private val bookmarks = ArrayList<Bookmark>() // oldest first
+    private val history = ArrayList<Visit>()
+    private val bookmarks = ArrayList<Bookmark>()
 
     fun init(context: Context) {
         synchronized(lock) { if (dir == null) dir = context.applicationContext.filesDir }
     }
 
-    /** Warm the cache off the main thread. */
     fun preload() {
         io.execute { synchronized(lock) { ensureLoaded() } }
     }
@@ -48,7 +43,7 @@ object BrowserLibrary {
                     history += Visit(o.optString("u"), o.optString("t"), o.optLong("w"))
                 }
             }
-        } catch (_: Exception) { /* corrupt file: start empty */ }
+        } catch (_: Exception) {  }
         try {
             val b = File(d, "bookmarks.json")
             if (b.exists()) {
@@ -58,7 +53,7 @@ object BrowserLibrary {
                     bookmarks += Bookmark(o.optString("i"), o.optString("t"), o.optString("u"), o.optLong("a"))
                 }
             }
-        } catch (_: Exception) { /* corrupt file: start empty */ }
+        } catch (_: Exception) {  }
     }
 
     private fun saveHistory() {
@@ -87,10 +82,8 @@ object BrowserLibrary {
                 target.writeText(text)
                 tmp.delete()
             }
-        } catch (_: Exception) { /* best effort */ }
+        } catch (_: Exception) {  }
     }
-
-    // --- history ---------------------------------------------------------------------------
 
     fun recordVisit(url: String?, title: String?) {
         if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))) return
@@ -100,7 +93,7 @@ object BrowserLibrary {
             val cleanTitle = title?.trim().orEmpty()
             val top = history.firstOrNull()
             if (top != null && top.url == url && now - top.time < SAME_PAGE_WINDOW_MS) {
-                // Reload / redirect settle on the same page: refresh instead of duplicating.
+
                 history[0] = top.copy(title = cleanTitle.ifEmpty { top.title }, time = now)
             } else {
                 history.add(0, Visit(url, cleanTitle, now))
@@ -125,7 +118,6 @@ object BrowserLibrary {
         }
     }
 
-    /** Removes visits newer than [sinceMs] (0 = everything). Returns how many were removed. */
     fun clearHistory(sinceMs: Long): Int = synchronized(lock) {
         ensureLoaded()
         val before = history.size
@@ -133,8 +125,6 @@ object BrowserLibrary {
         if (history.size != before) saveHistory()
         before - history.size
     }
-
-    // --- bookmarks -------------------------------------------------------------------------
 
     private fun key(url: String) = url.substringBefore('#').trimEnd('/')
 
@@ -186,7 +176,6 @@ object BrowserLibrary {
         }
     }
 
-    /** Netscape bookmark HTML: understood by Chrome, Firefox and by [importBookmarks]. */
     fun exportBookmarksHtml(): String {
         val sb = StringBuilder()
         sb.append("<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=UTF-8\">\n")
@@ -199,10 +188,9 @@ object BrowserLibrary {
         return sb.toString()
     }
 
-    /** Accepts Netscape HTML or a JSON list of {title,url}. Returns how many new bookmarks were added. */
     fun importBookmarks(text: String): Int {
         val t = text.trim()
-        val found = ArrayList<Pair<String, String>>() // title to url
+        val found = ArrayList<Pair<String, String>>()
         if (t.startsWith("[") || t.startsWith("{")) {
             try {
                 val arr = if (t.startsWith("[")) JSONArray(t) else JSONObject(t).optJSONArray("bookmarks") ?: JSONArray()

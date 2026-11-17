@@ -3,7 +3,6 @@ package com.mrdoob.browser
 import androidx.annotation.DrawableRes
 import java.util.Locale
 
-/** Top-level pages of Settings. [id] is what is saved across recreation, never the title. */
 enum class SettingsCategory(
     val id: String,
     val title: String,
@@ -35,10 +34,6 @@ enum class SettingsCategory(
     }
 }
 
-/**
- * One searchable setting. [id] is stable and is also how the page finds the row to scroll to and
- * highlight, so renaming a title never breaks search.
- */
 class SettingMeta(
     val id: String,
     val title: String,
@@ -50,7 +45,6 @@ class SettingMeta(
         .joinToString(" ").lowercase(Locale.ROOT)
     private val titleLower = title.lowercase(Locale.ROOT)
 
-    /** 0 = whole query in the title, 1 = every word found somewhere, -1 = no match. */
     fun score(words: List<String>, whole: String): Int = when {
         titleLower.contains(whole) -> 0
         words.all { haystack.contains(it) } -> 1
@@ -60,8 +54,15 @@ class SettingMeta(
 
 object SettingsCatalog {
 
-    val all: List<SettingMeta> = listOf(
-        // Appearance
+    val all: List<SettingMeta> = baseSettings() + devToolsSettings()
+
+    private fun devToolsSettings(): List<SettingMeta> = DevToolsPrefs.Flag.entries.map { f ->
+        SettingMeta(f.rowId, f.title, f.description.ifEmpty { f.section.title },
+            SettingsCategory.DEVELOPER, listOf("devtools", "protection", f.section.title.lowercase(), f.key.replace('_', ' ')))
+    }
+
+    private fun baseSettings(): List<SettingMeta> = listOf(
+
         SettingMeta("appearance_theme", "Theme", "Light, dark, or follow the system", SettingsCategory.APPEARANCE,
             listOf("dark", "dark mode", "light", "night", "system")),
         SettingMeta("appearance_dynamic", "Dynamic colours", "Use your wallpaper's Material You colours", SettingsCategory.APPEARANCE,
@@ -74,14 +75,14 @@ object SettingsCatalog {
             listOf("motion", "reduce motion", "transitions")),
         SettingMeta("appearance_remember_tab", "Remember developer tools tab", "Reopen the Console / Source / Network tab you used last", SettingsCategory.APPEARANCE,
             listOf("last tab", "panel")),
-        // General
+
         SettingMeta("general_engine", "Search engine", "Used when you type something that isn't a web address", SettingsCategory.GENERAL,
             listOf("google", "duckduckgo", "bing", "custom search")),
         SettingMeta("general_homepage", "Homepage", "Opened at launch when Startup is set to Homepage", SettingsCategory.GENERAL,
             listOf("home page", "start page")),
         SettingMeta("general_startup", "Startup", "What the browser opens when you start it", SettingsCategory.GENERAL,
             listOf("launch", "restore", "last page", "blank page", "continue")),
-        // Browser
+
         SettingMeta("browser_js", "JavaScript", "Turn off to load pages without scripts (the page reloads)", SettingsCategory.BROWSER,
             listOf("scripts", "js", "disable javascript")),
         SettingMeta("browser_3p_cookies", "Third-party cookies", "Let embedded content from other sites set cookies", SettingsCategory.BROWSER,
@@ -90,7 +91,7 @@ object SettingsCatalog {
             listOf("desktop", "desktop site", "mobile", "ua", "browser identity")),
         SettingMeta("browser_nav_confirm", "Navigation Confirmation", "Ask before leaving the current website", SettingsCategory.BROWSER,
             listOf("leave website", "leave site", "navigation guard", "confirm navigation", "stay", "external link", "protection")),
-        // Privacy & Security
+
         SettingMeta("privacy_library", "Bookmarks & history", "Search, edit and open them", SettingsCategory.PRIVACY,
             listOf("history", "browsing history", "bookmarks", "visited", "favourites")),
         SettingMeta("privacy_clear_history", "Clear browsing history", "Removes every visited page from the list", SettingsCategory.PRIVACY,
@@ -99,16 +100,14 @@ object SettingsCatalog {
             listOf("cache", "storage", "indexeddb", "local storage", "site data", "free space")),
         SettingMeta("privacy_clear_cookies", "Clear all cookies", "Signs you out of every site", SettingsCategory.PRIVACY,
             listOf("cookies", "sign out", "log out", "delete cookies")),
-        // Developer tools
+
         SettingMeta("dev_keep_console", "Preserve console log", "Keep console messages when the page navigates or reloads", SettingsCategory.DEVELOPER,
             listOf("keep console", "persist logs")),
-        SettingMeta("dev_keep_network", "Preserve network log", "Keep requests when the page navigates or reloads", SettingsCategory.DEVELOPER,
-            listOf("keep network", "persist requests")),
         SettingMeta("dev_timestamps", "Console timestamps", "Show the time each console message arrived", SettingsCategory.DEVELOPER,
             listOf("time", "clock")),
         SettingMeta("dev_clear_commands", "Clear command history", "Forget the JavaScript commands you ran in the console", SettingsCategory.DEVELOPER,
             listOf("console history", "commands")),
-        // Floating controls
+
         SettingMeta("float_main", "Floating bubble", "Record, reload and cookie buttons on top of the browser (this app only)", SettingsCategory.FLOATING,
             listOf("overlay", "record button", "pop-up")),
         SettingMeta("float_haptics", "Haptic feedback", "A small tap on Play, Pause, Resume and Delete cookies", SettingsCategory.FLOATING,
@@ -121,19 +120,19 @@ object SettingsCatalog {
             listOf("ring")),
         SettingMeta("float_item_delete", "Delete cookies and site data button", "Show it in the bubble's ring", SettingsCategory.FLOATING,
             listOf("ring", "clear")),
-        // Network capture
+
         SettingMeta("capture_site_only", "This site only", "Record only the site you started on; other sites are ignored", SettingsCategory.CAPTURE,
             listOf("har", "filter", "single site")),
         SettingMeta("capture_warn", "Warn before the limit", "Toast and amber bubble at 80% of the request / size limit", SettingsCategory.CAPTURE,
             listOf("limit", "warning", "har size")),
-        // Request rules
+
         SettingMeta("rules_delay", "Network delay", "Wait before every request is sent", SettingsCategory.RULES,
             listOf("throttle", "slow", "latency", "simulate")),
         SettingMeta("rules_list", "Rules", "Your block and mock response rules", SettingsCategory.RULES,
             listOf("edit rule", "delete rule", "block requests", "mock")),
         SettingMeta("rules_add", "Add rule", "Block a URL or answer it with your own response", SettingsCategory.RULES,
             listOf("block requests", "block url", "mock response", "new rule", "intercept")),
-        // Cookies
+
         SettingMeta("cookies_keep_site", "Keep cookies for this site", "The delete-cookies button and \"Clear this site\" will skip it", SettingsCategory.COOKIES,
             listOf("whitelist", "protect", "current site")),
         SettingMeta("cookies_whitelist", "Whitelisted sites", "Sites whose cookies are kept", SettingsCategory.COOKIES,

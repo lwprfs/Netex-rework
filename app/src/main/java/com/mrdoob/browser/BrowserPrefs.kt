@@ -2,7 +2,6 @@ package com.mrdoob.browser
 
 import android.content.Context
 
-/** Small persisted browser settings that are not part of HAR capture. */
 object BrowserPrefs {
 
     private const val PREFS = "netex_tools"
@@ -23,7 +22,6 @@ object BrowserPrefs {
     const val STARTUP_HOME = "home"
     const val STARTUP_BLANK = "blank"
 
-    /** Optional buttons of the floating ring (Play / Resume / Save / Share are always there). */
     const val ITEM_RELOAD = "reload"
     const val ITEM_HAR = "har"
     const val ITEM_COOKIES = "cookies"
@@ -39,7 +37,6 @@ object BrowserPrefs {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(KEY_TEXT_ZOOM, percent).apply()
     }
 
-    /** Whether the floating record / reload / cookie pop-up is shown (off by default). */
     fun floatingControls(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_FLOATING, false)
 
@@ -47,7 +44,6 @@ object BrowserPrefs {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_FLOATING, on).apply()
     }
 
-    /** Which optional ring buttons are shown (all by default). */
     fun floatingItems(context: Context): Set<String> {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_FLOAT_ITEMS, null)
             ?: return ALL_ITEMS.toSet()
@@ -66,7 +62,6 @@ object BrowserPrefs {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_HAPTICS, on).apply()
     }
 
-    /** Where the bubble was left: which screen edge, and its vertical offset from the top corner. */
     fun floatingOnLeft(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_FLOAT_LEFT, false)
 
@@ -80,30 +75,24 @@ object BrowserPrefs {
 
     private fun p(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** Page opened by the "Open homepage" startup behaviour (empty = none). */
     fun homepage(context: Context): String = p(context).getString(KEY_HOME, "").orEmpty()
     fun setHomepage(context: Context, url: String) { p(context).edit().putString(KEY_HOME, url.trim()).apply() }
 
-    /** What the browser opens at launch: the last page (default), the homepage, or a blank page. */
     fun startupMode(context: Context): String = p(context).getString(KEY_STARTUP, STARTUP_RESTORE) ?: STARTUP_RESTORE
     fun setStartupMode(context: Context, mode: String) { p(context).edit().putString(KEY_STARTUP, mode).apply() }
 
     fun javaScriptEnabled(context: Context): Boolean = p(context).getBoolean(KEY_JS, true)
     fun setJavaScriptEnabled(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_JS, on).apply() }
 
-    /** WebView's own default is off, so that stays the default here. */
     fun thirdPartyCookies(context: Context): Boolean = p(context).getBoolean(KEY_3P, false)
     fun setThirdPartyCookies(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_3P, on).apply() }
 
-    /** Ask before a link, script or history step takes the page to a different hostname (on by default). */
     fun navigationConfirmation(context: Context): Boolean = p(context).getBoolean(KEY_NAV_CONFIRM, true)
     fun setNavigationConfirmation(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_NAV_CONFIRM, on).apply() }
 
-    /** Replaces the mobile user agent when not blank (desktop mode still wins while it is on). */
     fun customUserAgent(context: Context): String = p(context).getString(KEY_UA, "").orEmpty()
     fun setCustomUserAgent(context: Context, ua: String) { p(context).edit().putString(KEY_UA, ua.trim()).apply() }
 
-    /** Small key/value store for developer-panel options (preserve logs, timestamps, command history). */
     fun getDev(context: Context, key: String): String? = p(context).getString("dev_$key", null)
     fun setDev(context: Context, key: String, value: String) { p(context).edit().putString("dev_$key", value).apply() }
     fun devFlag(context: Context, key: String): Boolean = getDev(context, key) == "true"

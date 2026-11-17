@@ -106,6 +106,8 @@
     else if (netFilter === 'err') okType = d.err === '1';
     else if (netFilter === 'slow') okType = d.slow === '1';
     else if (netFilter === 'post') okType = d.write === '1';
+    else if (netFilter === 'failed') okType = d.failed === '1';
+    else if (netFilter === 'nav') okType = d.isnav === '1';
     else if (netFilter === 'fetch' || netFilter === 'xhr') okType = d.kind === netFilter;
     else okType = d.type === netFilter;
     if (okType && netMethod !== 'all') okType = d.method === netMethod;
@@ -204,6 +206,7 @@
 
     renderRow(det, r);
 
+    if (isNew) trimRows();
     // Scroll after renderRow so scrollHeight reflects the new row's content.
     if (isNew && !networkScrolledUp) netList.scrollTop = netList.scrollHeight;
   }
@@ -224,23 +227,25 @@
   }
 
   function renderRow(det, r) {
-    var statusClass = (r.pending || r.status === 0) ? 's0'
+    var statusClass = r.failed ? 's5xx' : (r.pending || r.status === 0) ? 's0'
       : r.status < 300 ? 's2xx'
       : r.status < 400 ? 's3xx'
       : r.status < 500 ? 's4xx'
       : 's5xx';
-    var statusText = r.pending ? '…' : r.status === 0 ? '—' : r.status;
+    var statusText = r.pending ? '…' : r.failed ? 'ERR' : r.status === 0 ? '—' : r.status;
     var type = typeOf(r);
     det.dataset.type = type;
     det.dataset.url = r.url || '';
-    det.dataset.err = (!r.pending && (r.status >= 400 || r.status === 0)) ? '1' : '0';
+    det.dataset.err = (!r.pending && (r.failed || r.status >= 400 || (r.status === 0 && r.capture !== 'native'))) ? '1' : '0';
+    det.dataset.nav = String(r.navId || 0);
+    det.dataset.isnav = (r.kind === 'document' && r.navId) ? '1' : '0';
     det.dataset.slow = (!r.pending && r.durationMs > 1000) ? '1' : '0';
     det.dataset.write = ['POST', 'PUT', 'PATCH', 'DELETE'].indexOf((r.method || '').toUpperCase()) !== -1 ? '1' : '0';
     det._r = r;
     det.dataset.kind = r.kind || '';
     det.dataset.method = (r.method || '').toUpperCase();
     det.dataset.sc = (!r.pending && r.status >= 200) ? String(Math.floor(r.status / 100)) : '';
-    det.dataset.failed = (!r.pending && r.status === 0) ? '1' : '0';
+    det.dataset.failed = (r.failed || (!r.pending && r.status === 0 && r.capture !== 'native')) ? '1' : '0';
     det.dataset.hay = ((r.method || '') + ' ' + (r.pending ? '' : r.status) + ' ' + (r.url || '') + ' ' + type + ' ' + (r.contentType || '')).toLowerCase();
 
     var summary = document.createElement('summary');
@@ -254,9 +259,13 @@
 
     var meta = document.createElement('div');
     meta.className = 'meta';
-    meta.appendChild(span('tag', r.pending ? 'Pending' : (r.status ? 'HTTP ' + r.status : 'No response')));
+    meta.appendChild(span('tag', r.pending ? 'Pending' : (r.status ? 'HTTP ' + r.status : (r.failed ? 'Failed' : (r.capture === 'native' ? 'Status unavailable' : 'No response')))));
     meta.appendChild(span('tag', type.toUpperCase()));
     if (r.contentType) meta.appendChild(span('tag', r.contentType.split(';')[0]));
+    if (r.navId) meta.appendChild(span('tag', 'Navigation #' + r.navId));
+    if (r.redirectHop) meta.appendChild(span('tag', 'Redirect hop (status not exposed by WebView)'));
+    if (r.capture === 'native') meta.appendChild(span('tag', 'Partially captured: WebView reports URL, method and request headers only'));
+    if (r.error) meta.appendChild(span('tag', 'Error: ' + r.error));
     if (r.durationMs) meta.appendChild(span('tag', r.durationMs + ' ms'));
     if (r.size) meta.appendChild(span('tag', formatSize(r.size)));
     body.appendChild(meta);
@@ -769,7 +778,7 @@
   document.getElementById('nKeep').addEventListener('click', function () {
     keepNetwork = !keepNetwork;
     this.classList.toggle('on', keepNetwork);
-    savePref('keep_network', keepNetwork);
+    devtools('set-preserve', { on: keepNetwork });
   });
   document.getElementById('nWater').addEventListener('click', openWaterfall);
   document.getElementById('nCopyUrls').addEventListener('click', function () {
@@ -1230,6 +1239,7 @@
     document.getElementById('cKeep').classList.toggle('on', keepConsole);
     keepNetwork = !!o.keepNetwork;
     document.getElementById('nKeep').classList.toggle('on', keepNetwork);
+    if (o.maxRows) maxRows = o.maxRows;
     if (Array.isArray(o.history)) {
       history = o.history.filter(function (x) { return typeof x === 'string'; }).slice(-MAX_HISTORY);
       historyCursor = -1;
@@ -1237,7 +1247,7 @@
   }
 
   // Preserve-log mode: old rows stay, a divider marks the navigation.
-  function markNavigation(kind, url) {
+  function markNavigation(kind, url, navId) {
     if (kind === 'console') {
       var entries = document.getElementById('consoleEntries');
       entries.appendChild(el('div', 'sep', 'Navigated to ' + url));
@@ -1245,14 +1255,230 @@
     } else {
       var rows = netList.querySelectorAll('details.req');
       if (!rows.length) return;
-      rows.forEach(function (d) {
-        delete d.dataset.rid; // new requests reuse ids; never merge into a previous page's row
-        d.dataset.stale = '1';
-        d.classList.add('old');
-      });
-      netList.appendChild(el('div', 'navsep', 'Navigated to ' + url));
+      // Request ids are unique per request, so old rows keep theirs: a late completion still updates its own row.
+      rows.forEach(function (d) { d.dataset.stale = '1'; d.classList.add('old'); });
+      netList.appendChild(el('div', 'navsep', 'Navigation' + (navId ? ' #' + navId : '') + ' to ' + url));
     }
   }
+
+  // ======================================================================================
+  // Developer tools: protection status, navigation history, events, detection details
+  // ======================================================================================
+  var maxRows = 2000;
+
+  function devtools(action, extra) {
+    var m = { type: 'devtools', action: action };
+    if (extra) for (var k in extra) m[k] = extra[k];
+    try { AndroidPanel.postMessage(JSON.stringify(m)); } catch (e) {}
+  }
+
+  function trimRows() {
+    var rows = netList.querySelectorAll('details.req');
+    var extra = rows.length - maxRows;
+    for (var i = 0; i < extra; i++) {
+      var d = rows[i];
+      totalBytes -= parseInt(d.dataset.lastSize, 10) || 0;
+      totalCount--;
+      d.remove();
+    }
+    if (extra > 0) updateTotals();
+  }
+
+  function patchNetworkRow(id, status, failed, error) {
+    var det = netList.querySelector('details.req[data-rid="' + id + '"]');
+    if (!det || !det._r) return;
+    var r = det._r;
+    if (status > 0) r.status = status;
+    if (failed) r.failed = true;
+    if (error) r.error = error;
+    r.pending = false;
+    renderRow(det, r);
+  }
+
+  // Navigation started with Preserve off: keep only the kinds the user chose to keep.
+  function clearForNavigation(keepFailed, keepDocs) {
+    netList.querySelectorAll('details.req').forEach(function (d) {
+      if ((keepFailed && d.dataset.failed === '1') || (keepDocs && d.dataset.isnav === '1')) return;
+      totalBytes -= parseInt(d.dataset.lastSize, 10) || 0;
+      totalCount--;
+      d.remove();
+    });
+    netList.querySelectorAll('.navsep').forEach(function (n) { n.remove(); });
+    if (!netList.querySelector('details.req')) showEmptyNetwork();
+    updateTotals();
+  }
+
+  var devState = null;
+  function setDevStatus(o) {
+    devState = o;
+    var box = document.getElementById('devStatus');
+    box.replaceChildren();
+    function pill(text, cls, onClick) {
+      var b = el('button', 'pill ' + (cls || ''), text);
+      if (onClick) b.addEventListener('click', onClick);
+      box.appendChild(b);
+    }
+    pill(o.enabled ? (o.auto ? 'Auto protection on' : 'Auto protection off') : 'DevTools compat off', o.enabled && o.auto ? 'ok' : '', function () { devtools('open-settings'); });
+    if (o.compat) pill('Compat mode', 'warn', function () { devtools('get-detection'); });
+    if (o.activated) pill(o.activated + ' protection' + (o.activated > 1 ? 's' : '') + ' active', 'warn', function () { devtools('get-detection'); });
+    if (o.loop && o.loop !== 'none') pill('Loop: ' + o.loop, 'err', function () { devtools('get-nav'); });
+    if (o.recording) pill(o.recordingPersist ? 'Recording persists' : 'Recording pauses on navigation', o.recordingPersist ? 'ok' : 'warn');
+    if (o.detection && o.detection !== 'none') pill('Interference: ' + o.detection, 'err', function () { devtools('get-detection'); });
+    box.style.display = box.childNodes.length ? '' : 'none';
+  }
+
+  function hostPath(u) {
+    try { var x = new URL(u); return x.host + (x.pathname === '/' ? '/' : x.pathname) + x.search; } catch (e) { return u; }
+  }
+
+  function showNavHistory(json) {
+    var data; try { data = JSON.parse(json); } catch (e) { return; }
+    var ov = overlay('Navigation history');
+    var b = ov.body;
+    if (!data.tracking) b.appendChild(el('div', 'note', 'Native navigation tracking is off (Settings, Developer Tools, Navigation Protection).'));
+    var navs = data.navs || [];
+    if (!navs.length) { b.appendChild(el('div', 'empty', 'No navigations recorded yet.')); return; }
+    if (data.loop && data.loop.level !== 'none') {
+      var seq = (data.loop.sequence || []).map(function (s) { return '#' + s.id + ' ' + hostPath(s.url); });
+      var warn = el('div', 'note warnbox');
+      warn.appendChild(el('b', null, 'Loop detected (' + data.loop.level + ')'));
+      warn.appendChild(el('div', null, seq.join('  →  ')));
+      var row = el('div', 'actions');
+      var stop = el('button', 'chip', data.holding ? 'Continue navigation' : 'Stop automatic navigation');
+      stop.addEventListener('click', function () { devtools(data.holding ? 'continue-nav' : 'stop-nav'); ov.el.remove(); });
+      row.appendChild(stop);
+      warn.appendChild(row);
+      b.appendChild(warn);
+    }
+    b.appendChild(el('div', 'note', 'Native counts every request WebView reports. The page-captured list can be shorter: requests the page cannot see are not available.'));
+    var rows = netList.querySelectorAll('details.req');
+    navs.forEach(function (n) {
+      var card = el('div', 'navcard');
+      var head = el('div', 'navhead');
+      head.appendChild(el('b', null, 'Navigation #' + n.id));
+      var tags = [n.type + (n.inferred ? ' (inferred)' : ''), n.status, n.user ? 'user' : 'automatic'];
+      if (n.repeat > 1) tags.push('URL seen ' + n.repeat + 'x');
+      if (n.restored) tags.push('from last run');
+      head.appendChild(el('span', 'dim', ' ' + tags.join(' · ')));
+      card.appendChild(head);
+      card.appendChild(el('div', 'navurl', n.url));
+      if (n.hops.length > 1) {
+        var chain = el('div', 'chain');
+        chain.appendChild(el('div', 'dim', 'Redirect chain (' + n.hops.length + ' requests)'));
+        n.hops.forEach(function (h, i) { chain.appendChild(el('div', null, (i + 1) + '. ' + (h.redirect ? '↪ ' : '') + h.url)); });
+        card.appendChild(chain);
+      }
+      var mine = [];
+      rows.forEach(function (d) { if (d.dataset.nav === String(n.id) && d._r) mine.push(d._r); });
+      var info = 'Captured ' + mine.length + ' request' + (mine.length === 1 ? '' : 's') + ' in the log; WebView reported ' + n.native +
+        (n.frames ? ' (' + n.frames + ' look like frame documents)' : '') + '.';
+      if (n.error) info += ' Error: ' + n.error + '.';
+      if (n.http) info += ' HTTP ' + n.http + '.';
+      card.appendChild(el('div', 'dim', info));
+      mine.slice(0, 40).forEach(function (r) { card.appendChild(el('div', 'navreq', r.method + ' ' + hostPath(r.url))); });
+      if (mine.length > 40) card.appendChild(el('div', 'dim', '…and ' + (mine.length - 40) + ' more'));
+      b.appendChild(card);
+    });
+    var foot = el('div', 'actions');
+    var clr = el('button', 'chip', 'Clear history');
+    clr.addEventListener('click', function () { devtools('clear-nav'); ov.el.remove(); });
+    foot.appendChild(clr);
+    b.appendChild(foot);
+  }
+
+  var evFilter = 'all', evQuery = '', evData = [];
+  var evOverlay = null;
+  function showEvents(json) {
+    try { evData = JSON.parse(json); } catch (e) { return; }
+    if (!evOverlay || !evOverlay.el.isConnected) {
+      evOverlay = overlay('Events');
+      var bar = el('div', 'bar');
+      ['all', 'info', 'warning', 'critical'].forEach(function (f) {
+        var c = el('button', 'chip' + (f === evFilter ? ' on' : ''), f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1));
+        c.addEventListener('click', function () {
+          evFilter = f;
+          bar.querySelectorAll('.chip[data-f]').forEach(function (x) { x.classList.toggle('on', x === c); });
+          drawEvents();
+        });
+        c.dataset.f = f;
+        bar.appendChild(c);
+      });
+      var q = el('input'); q.type = 'search'; q.placeholder = 'Search events'; q.value = evQuery;
+      q.addEventListener('input', function () { evQuery = q.value.trim().toLowerCase(); drawEvents(); });
+      bar.appendChild(q);
+      var exp = el('button', 'chip', 'Export');
+      exp.addEventListener('click', function () { devtools('export-events'); });
+      var clr = el('button', 'chip', 'Clear');
+      clr.addEventListener('click', function () { devtools('clear-events'); });
+      bar.appendChild(exp); bar.appendChild(clr);
+      evOverlay.body.appendChild(bar);
+      evOverlay.list = el('div', 'evlist');
+      evOverlay.body.appendChild(evOverlay.list);
+    }
+    drawEvents();
+  }
+
+  function drawEvents() {
+    var list = evOverlay.list;
+    list.replaceChildren();
+    var shown = evData.filter(function (e) {
+      if (evFilter !== 'all' && e.severity !== evFilter) return false;
+      if (!evQuery) return true;
+      return (e.label + ' ' + e.url + ' ' + e.reason + ' ' + e.actions.join(' ')).toLowerCase().indexOf(evQuery) !== -1;
+    });
+    if (!shown.length) { list.appendChild(el('div', 'empty', 'No events.')); return; }
+    shown.forEach(function (e) {
+      var card = el('div', 'evcard sev-' + e.severity);
+      var h = el('div', 'navhead');
+      h.appendChild(el('b', null, e.label + (e.count > 1 ? '  ×' + e.count : '')));
+      h.appendChild(el('span', 'dim', '  ' + hms(e.time) + ' · ' + e.severity));
+      card.appendChild(h);
+      card.appendChild(el('div', 'navurl', e.url));
+      card.appendChild(el('div', null, e.reason));
+      if (e.actions.length) card.appendChild(el('div', 'dim', 'Actions: ' + e.actions.join('; ')));
+      list.appendChild(card);
+    });
+  }
+
+  function showDetection(json) {
+    var d; try { d = JSON.parse(json); } catch (e) { return; }
+    var ov = overlay('Website interference');
+    var b = ov.body;
+    if (!d.found) {
+      b.appendChild(el('div', 'empty', 'No interference indicators for ' + (d.host || 'this site') + '.'));
+    } else {
+      var card = el('div', 'navcard');
+      card.appendChild(el('b', null, 'Website Interference Detected'));
+      [['Type', d.type], ['Confidence', d.confidence], ['Behavior', d.behavior], ['Occurrences', d.occurrences], ['Affected URL', d.host]].forEach(function (p) {
+        card.appendChild(el('div', null, p[0] + ': ' + p[1]));
+      });
+      card.appendChild(el('div', 'dim', 'Indicators are circumstantial. A single debugger statement or size check is common in legitimate code; confidence rises only when several different indicators appear. Compatibility mode reduces interference but cannot defeat every detection method in WebView.'));
+      b.appendChild(card);
+      var acts = el('div', 'actions');
+      [['Preserve Network Logs', 'site-preserve'], ['Enable Navigation Protection', 'site-nav'], ['Enable Compatibility Mode', 'site-compat']].forEach(function (a) {
+        var c = el('button', 'chip', a[0]);
+        c.addEventListener('click', function () { devtools(a[1]); c.textContent = a[0] + ' ✓'; c.disabled = true; });
+        acts.appendChild(c);
+      });
+      b.appendChild(acts);
+      var det = el('div', 'navcard');
+      det.appendChild(el('b', null, 'Detection details'));
+      (d.indicators || []).forEach(function (i) {
+        det.appendChild(el('div', null, i.label + ' ×' + i.count + (i.behavioral ? ' (behaviour)' : '')));
+        if (i.detail) det.appendChild(el('div', 'dim', i.detail));
+      });
+      b.appendChild(det);
+    }
+    if ((d.activations || []).length) {
+      var act = el('div', 'navcard');
+      act.appendChild(el('b', null, 'Protections switched on for this session'));
+      d.activations.forEach(function (a) { act.appendChild(el('div', null, a.label + ' — ' + a.reason)); });
+      b.appendChild(act);
+    }
+  }
+
+  document.getElementById('nHist').addEventListener('click', function () { devtools('get-nav'); });
+  document.getElementById('nEvents').addEventListener('click', function () { devtools('get-events'); });
 
   window.__panel = {
     setTheme: setTheme,
@@ -1267,6 +1493,12 @@
     deliverEvalResult: deliverEvalResult,
     deliverReplay: deliverReplay,
     setPrefs: setPrefs,
-    markNavigation: markNavigation
+    markNavigation: markNavigation,
+    patchNetworkRow: patchNetworkRow,
+    clearForNavigation: clearForNavigation,
+    setDevStatus: setDevStatus,
+    showNavHistory: showNavHistory,
+    showEvents: showEvents,
+    showDetection: showDetection
   };
 })();

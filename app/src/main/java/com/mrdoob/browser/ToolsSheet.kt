@@ -14,7 +14,6 @@ import com.mrdoob.browser.databinding.ItemOptionRowBinding
 import com.mrdoob.browser.databinding.SheetToolsBinding
 import kotlinx.coroutines.launch
 
-/** What the Menu sheet needs from the browser. */
 interface ToolsHost {
     val isDesktopMode: Boolean
     val currentTextZoom: Int
@@ -52,13 +51,11 @@ class ToolsSheet(
         b.toolPageHost.text = if (url.startsWith("http")) android.net.Uri.parse(url).host ?: url else "No page loaded"
         b.toolVersion.text = "Netex ${BuildConfig.VERSION_NAME}"
 
-        // Quick actions
         b.toolShare.setOnClickListener { dialog.dismiss(); host.sharePage() }
         b.toolCopy.setOnClickListener { dialog.dismiss(); host.copyLink() }
         b.toolExternal.setOnClickListener { dialog.dismiss(); host.openExternal() }
         b.toolRefresh.setOnClickListener { dialog.dismiss(); host.hardReload() }
 
-        // Browsing rows
         val desktop = row(b.toolCardMain, R.drawable.ic_desktop, "Desktop site", "Request the desktop version of pages")
         desktop.optSwitch.visibility = View.VISIBLE
         desktop.optSwitch.isChecked = host.isDesktopMode
@@ -113,7 +110,6 @@ class ToolsSheet(
         har.optChevron.visibility = View.VISIBLE
         har.root.setOnClickListener { dialog.dismiss(); host.openHar() }
 
-        // Text size
         val zoomId = when (host.currentTextZoom) {
             85 -> R.id.zoom85
             125 -> R.id.zoom125
@@ -132,7 +128,6 @@ class ToolsSheet(
             if (percent != host.currentTextZoom) host.changeTextZoom(percent)
         }
 
-        // Privacy
         val clear = row(b.toolCardDanger, R.drawable.ic_delete, "Clear browsing data", "Cache, cookies, site storage and history")
         val red = activity.nx(R.color.nx_error)
         clear.optTitle.setTextColor(red)

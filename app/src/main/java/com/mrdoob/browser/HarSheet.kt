@@ -21,12 +21,6 @@ import com.mrdoob.browser.databinding.ItemOptionTextBinding
 import com.mrdoob.browser.databinding.SheetHarBinding
 import kotlinx.coroutines.launch
 
-/**
- * Network capture sheet.
- *  - Session: live setup summary, presets, session limits.
- *  - Detail:  request types, bodies + manual MB limits, headers & cookies, privacy, filters.
- *  - Export:  share / save / file manager / clear.
- */
 class HarSheet(
     private val activity: AppCompatActivity,
     private val onPickLocation: (String) -> Unit
@@ -36,7 +30,6 @@ class HarSheet(
     private lateinit var dialog: BottomSheetDialog
     private lateinit var summaryView: TextView
 
-    /** Re-read every stored option into its control (after a preset or reset). */
     private val refreshers = ArrayList<() -> Unit>()
     private val exportRows = ArrayList<View>()
     private var clearRow: View? = null
@@ -61,8 +54,6 @@ class HarSheet(
         dialog.show()
     }
 
-    // --- controls -----------------------------------------------------------------------
-
     private fun wireControls() {
         b.harStart.setOnClickListener { HarRecorder.start() }
         b.harPause.setOnClickListener { HarRecorder.togglePause() }
@@ -85,8 +76,6 @@ class HarSheet(
         for (r in refreshers) r()
         onChanged()
     }
-
-    // --- Session pane -------------------------------------------------------------------
 
     private fun buildSessionPane() {
         val pane = b.harPaneSession
@@ -146,8 +135,6 @@ class HarSheet(
         )
         hint(pane, "Bigger limits use more phone memory while recording.")
     }
-
-    // --- Detail pane --------------------------------------------------------------------
 
     private fun buildDetailPane() {
         val pane = b.harPaneDetail
@@ -254,8 +241,6 @@ class HarSheet(
         pane.addView(reset)
     }
 
-    // --- Export pane --------------------------------------------------------------------
-
     private fun buildExportPane() {
         val pane = b.harPaneExport
 
@@ -287,8 +272,6 @@ class HarSheet(
             Toast.makeText(activity, "HAR cache cleared", Toast.LENGTH_SHORT).show()
         }
     }
-
-    // --- live status --------------------------------------------------------------------
 
     private fun render(s: HarRecorder.Status) {
         val counts = "${s.entries} request${if (s.entries == 1) "" else "s"} · " +
@@ -336,8 +319,6 @@ class HarSheet(
         return if (mb < 10) String.format(java.util.Locale.US, "%.1f MB", mb)
         else String.format(java.util.Locale.US, "%.0f MB", mb)
     }
-
-    // --- row builders -------------------------------------------------------------------
 
     private fun section(parent: ViewGroup, text: String) {
         val label = inflater.inflate(R.layout.item_section_label, parent, false) as TextView

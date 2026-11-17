@@ -81,3 +81,31 @@ are set as repository secrets.
 ## Dev Log
 
 https://x.com/mrdoob/status/2051185470344953969
+
+## Developer Tools compatibility
+
+Settings → Developer Tools has eight sub-pages (General, Network Protection, Navigation Protection,
+Anti-Debugging Detection, JavaScript Compatibility, Recording Protection, Automatic Protection,
+Advanced Settings). Every switch is wired to real behaviour and shows whether it is automatic or manual.
+
+- **Native navigation tracking** (`NavigationTracker`) is fed by WebViewClient callbacks, not page JS, so it
+  survives destroyed JavaScript contexts. Redirect hops, reloads, errors and repeat counts are recorded.
+  WebView does not expose redirect statuses or response bodies and cannot tell iframe documents from other
+  requests; those rows are labelled *partially captured* and iframe documents are only counted.
+- **Reload / loop detection** counts only automatic navigations (no tap, no Netex button) against
+  configurable thresholds (default 3/10 s warn, 5/15 s protect, 8/30 s stronger), plus A→B→A cycle and
+  redirect-revisit detection. A loop offers *Stop automatic navigation*; this refuses non-gesture
+  navigations and pauses page timers. A page calling `location.reload()` from running script cannot be
+  blocked by WebView otherwise.
+- **Network log** is bounded, de-duplicated (stable ids for performance entries), keeps navigation ids and can
+  optionally be saved across restarts (metadata only, no bodies or headers).
+- **Anti-DevTools detection** combines several indicators (inline script scan, content removal, reload or
+  redirect after opening the panel, optional debugger instrumentation). One indicator is never more than
+  LOW. Compatibility mode is a set of protections, not a guaranteed bypass.
+- **Per-site profiles** override global settings; protections the engine activates are session-only and
+  never rewrite saved settings. Profiles can be exported and imported as JSON.
+- Network tab: Preserve, Failed / Nav filters, Nav history (timeline and redirect chains), Events dashboard
+  and a protection status strip.
+
+Not verified on a device in this change set: the code was written without a Kotlin compiler available.
+Build and run the ten scenarios before shipping.

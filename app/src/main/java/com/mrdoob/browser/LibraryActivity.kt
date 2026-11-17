@@ -31,7 +31,6 @@ import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
 
-/** Bookmarks and browsing history: search, open, edit, delete (with undo), clear, import / export. */
 class LibraryActivity : AppCompatActivity() {
 
     private sealed class Row {
@@ -162,8 +161,6 @@ class LibraryActivity : AppCompatActivity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
-    // --- toolbar menu --------------------------------------------------------------------------
-
     private fun invalidateOptionsMenuItems() {
         toolbar.menu.clear()
         if (showingHistory) {
@@ -173,8 +170,6 @@ class LibraryActivity : AppCompatActivity() {
             toolbar.menu.add("Export bookmarks").setOnMenuItemClickListener { exportBookmarks(); true }
         }
     }
-
-    // --- content -------------------------------------------------------------------------------
 
     private fun refresh() {
         val q = search.text.toString().trim().lowercase()

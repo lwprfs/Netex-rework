@@ -78,7 +78,7 @@ class PanelRenderer(
             put("size", record.sizeBytes)
             put("requestId", record.requestId ?: "")
             put("pending", record.pending)
-            // For "Copy as cURL" and "Replay" in the Network tab.
+
             put("reqHeaders", org.json.JSONArray().also { arr ->
                 record.requestHeaders.forEach { (k, v) -> arr.put(org.json.JSONArray().put(k).put(v)) }
             })
@@ -88,7 +88,12 @@ class PanelRenderer(
             })
             put("startedAt", record.startedAt)
             put("kind", record.kind)
-            // [blocked, dns, connect, ssl, send, wait, receive]; -1 = the page could not measure it.
+            put("navId", record.navId)
+            put("capture", record.capture)
+            put("failed", record.failed)
+            put("error", record.error)
+            put("redirectHop", record.redirectHop)
+
             record.timings?.let { t -> put("timings", org.json.JSONArray().also { a -> t.forEach { a.put(it) } }) }
         }.toString()
         afterShellLoaded {
@@ -126,20 +131,36 @@ class PanelRenderer(
         }
     }
 
-    /** Sends the saved developer-panel options (timestamps, preserve logs, command history) to the panel. */
     fun pushPrefs() {
         val o = JSONObject().apply {
             put("timestamps", BrowserPrefs.devFlag(activity, "timestamps"))
             put("keepConsole", BrowserPrefs.devFlag(activity, "keep_console"))
-            put("keepNetwork", BrowserPrefs.devFlag(activity, "keep_network"))
+            put("keepNetwork", DevToolsPrefs.on(DevToolsPrefs.Flag.PRESERVE_NAV))
+            put("maxRows", DevToolsPrefs.num(DevToolsPrefs.Num.MAX_LOG_ENTRIES))
             put("history", try { JSONArray(BrowserPrefs.getDev(activity, "cmd_history") ?: "[]") } catch (_: Exception) { JSONArray() })
         }.toString()
         afterShellLoaded { evalPanel("window.__panel.setPrefs($o)") }
     }
 
-    /** Preserve-logs mode: keep the old rows, but mark where the page navigated. */
-    fun markNavigation(kind: String, url: String?) {
-        afterShellLoaded { evalPanel("window.__panel.markNavigation(${q(kind)}, ${q(url ?: "")})") }
+    fun markNavigation(kind: String, url: String?, navId: Long = 0) {
+        afterShellLoaded { evalPanel("window.__panel.markNavigation(${q(kind)}, ${q(url ?: "")}, $navId)") }
+    }
+
+    fun patchNetworkRow(id: String, status: Int, failed: Boolean, error: String) {
+        afterShellLoaded { evalPanel("window.__panel.patchNetworkRow(${q(id)}, $status, $failed, ${q(error)})") }
+    }
+
+    fun clearForNavigation(keepFailed: Boolean, keepDocs: Boolean) {
+        afterShellLoaded { evalPanel("window.__panel.clearForNavigation($keepFailed, $keepDocs)") }
+    }
+
+    fun setDevStatus(json: String) {
+        afterShellLoaded { evalPanel("window.__panel.setDevStatus($json)") }
+    }
+
+    fun deliverDevTools(fn: String, json: String) {
+        if (fn !in setOf("showNavHistory", "showEvents", "showDetection")) return
+        afterShellLoaded { evalPanel("window.__panel.$fn(${q(json)})") }
     }
 
     fun deliverReplay(id: String, resultJson: String) {

@@ -1,6 +1,5 @@
 package com.mrdoob.browser
 
-/** Masks credentials before they are written into a HAR (optional "Redact sensitive values"). */
 object Redact {
 
     const val MASK = "[redacted]"

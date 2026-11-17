@@ -181,7 +181,7 @@ class CookieSheet(
             val pad = activity.dp(16)
             setPadding(pad, pad, pad, pad)
         }
-        // Pre-fill from the clipboard when it already holds JSON.
+
         val clip = (activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
             .primaryClip?.getItemAt(0)?.coerceToText(activity)?.toString().orEmpty().trim()
         if (clip.startsWith("{") || clip.startsWith("[")) input.setText(clip)
