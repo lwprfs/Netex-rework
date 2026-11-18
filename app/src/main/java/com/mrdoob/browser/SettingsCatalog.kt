@@ -27,7 +27,9 @@ enum class SettingsCategory(
     RULES("rules", "Request Rules", "Block, mock or delay network requests", R.drawable.ic_filter,
         listOf("block requests", "intercept", "mock response", "throttle", "slow network")),
     COOKIES("cookies", "Cookies", "Per-site cookie protection", R.drawable.ic_cookie,
-        listOf("whitelist", "keep", "site data"));
+        listOf("whitelist", "keep", "site data")),
+    NAVIGATION("navigation", "Navigation Protection", "Ask before a page sends you to another website", R.drawable.ic_lock,
+        listOf("redirect", "popup", "pop-up", "confirm", "leave site", "allow list", "block list", "whitelist", "blacklist", "link"));
 
     companion object {
         fun fromId(id: String?): SettingsCategory? = entries.firstOrNull { it.id == id }
@@ -54,7 +56,17 @@ class SettingMeta(
 
 object SettingsCatalog {
 
-    val all: List<SettingMeta> = baseSettings() + devToolsSettings()
+    val all: List<SettingMeta> = baseSettings() + devToolsSettings() + navigationSettings()
+
+    private fun navigationSettings(): List<SettingMeta> = listOf(
+        SettingMeta("nav_master", "Navigation Confirmation", "Ask before leaving the current website", SettingsCategory.NAVIGATION,
+            listOf("leave website", "leave site", "navigation guard", "confirm navigation", "stay", "external link", "protection")),
+        SettingMeta("nav_allowed", "Allowed domains", "Destinations that never ask", SettingsCategory.NAVIGATION, listOf("whitelist")),
+        SettingMeta("nav_blocked", "Blocked domains", "Destinations that are always refused", SettingsCategory.NAVIGATION, listOf("blacklist")),
+        SettingMeta("nav_sites", "Website rules", "Always ask, allow or block per website", SettingsCategory.NAVIGATION)
+    ) + NavPolicy.Rule.entries.map { r ->
+        SettingMeta("nav_rule_" + r.key, r.title, r.description, SettingsCategory.NAVIGATION, listOf("navigation"))
+    }
 
     private fun devToolsSettings(): List<SettingMeta> = DevToolsPrefs.Flag.entries.map { f ->
         SettingMeta(f.rowId, f.title, f.description.ifEmpty { f.section.title },
@@ -89,8 +101,6 @@ object SettingsCatalog {
             listOf("tracking", "embedded", "cross-site")),
         SettingMeta("browser_ua", "User agent", "Replaces the mobile user agent (Desktop site still overrides it)", SettingsCategory.BROWSER,
             listOf("desktop", "desktop site", "mobile", "ua", "browser identity")),
-        SettingMeta("browser_nav_confirm", "Navigation Confirmation", "Ask before leaving the current website", SettingsCategory.BROWSER,
-            listOf("leave website", "leave site", "navigation guard", "confirm navigation", "stay", "external link", "protection")),
 
         SettingMeta("privacy_library", "Bookmarks & history", "Search, edit and open them", SettingsCategory.PRIVACY,
             listOf("history", "browsing history", "bookmarks", "visited", "favourites")),

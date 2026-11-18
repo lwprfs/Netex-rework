@@ -292,7 +292,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun buildLanding() {
         val groups = listOf(
             null to listOf(SettingsCategory.APPEARANCE, SettingsCategory.GENERAL, SettingsCategory.BROWSER),
-            "Privacy" to listOf(SettingsCategory.PRIVACY, SettingsCategory.COOKIES),
+            "Privacy" to listOf(SettingsCategory.PRIVACY, SettingsCategory.COOKIES, SettingsCategory.NAVIGATION),
             "Developer" to listOf(SettingsCategory.DEVELOPER, SettingsCategory.FLOATING,
                 SettingsCategory.CAPTURE, SettingsCategory.RULES)
         )
@@ -373,6 +373,7 @@ class SettingsActivity : AppCompatActivity() {
             SettingsCategory.CAPTURE -> buildCapture()
             SettingsCategory.RULES -> buildRules()
             SettingsCategory.COOKIES -> buildCookies()
+            SettingsCategory.NAVIGATION -> buildNavigation()
         }
     }
 
@@ -478,10 +479,10 @@ class SettingsActivity : AppCompatActivity() {
 
         section("Navigation")
         val nav = card()
-        switchRow(nav, "browser_nav_confirm", R.drawable.ic_lock, "Navigation Confirmation",
-            "Ask before leaving the current website",
-            { BrowserPrefs.navigationConfirmation(this) }, { BrowserPrefs.setNavigationConfirmation(this, it) })
-        hint("Changes apply to the open page when you return to the browser.")
+        navRow(nav, "browser_nav_confirm", R.drawable.ic_lock, "Navigation Protection",
+            "Ask before a page sends you to another website: rules, allowed and blocked domains") {
+            openCategory(SettingsCategory.NAVIGATION)
+        }
     }
 
     private fun buildPrivacy() {
@@ -520,7 +521,90 @@ class SettingsActivity : AppCompatActivity() {
             openCategory(SettingsCategory.COOKIES)
         }
         navRow(related, null, R.drawable.ic_lock, "Navigation protection", "Ask before leaving the current website") {
-            openCategory(SettingsCategory.BROWSER, "browser_nav_confirm")
+            openCategory(SettingsCategory.NAVIGATION)
+        }
+    }
+
+    private fun buildNavigation() {
+        section("Navigation confirmation")
+        val master = card()
+        switchRow(master, "nav_master", R.drawable.ic_lock, "Navigation Confirmation",
+            "Ask before a page sends you to another website. Typed addresses, bookmarks, back, forward and reload never ask.",
+            { BrowserPrefs.navigationConfirmation(this) }, { BrowserPrefs.setNavigationConfirmation(this, it) })
+
+        fun ruleRows(parent: LinearLayout, vararg rules: NavPolicy.Rule) {
+            for (r in rules) {
+                switchRow(parent, "nav_rule_" + r.key, R.drawable.ic_filter, r.title,
+                    r.description + "\nDefault: " + (if (r.default) "On" else "Off"),
+                    { NavConfirm.rule(r) }, { NavConfirm.setRule(r, it) })
+            }
+        }
+        section("When to ask")
+        ruleRows(card(), NavPolicy.Rule.CONFIRM_EXTERNAL, NavPolicy.Rule.CONFIRM_SCRIPT, NavPolicy.Rule.CONFIRM_AUTO,
+            NavPolicy.Rule.CONFIRM_NEW_WINDOW, NavPolicy.Rule.CONFIRM_UNKNOWN, NavPolicy.Rule.CONFIRM_SCHEME,
+            NavPolicy.Rule.CONFIRM_EVERY, NavPolicy.Rule.CONFIRM_HTTPS_UPGRADE)
+        section("What counts as the same website")
+        ruleRows(card(), NavPolicy.Rule.ALLOW_SAME_ORIGIN, NavPolicy.Rule.TRUST_SUBDOMAINS)
+        hint("Same origin means same scheme, host and port (www. is ignored). A subdomain is a different origin and is not trusted unless you turn that on or list *.domain.")
+        section("Suspicious navigation")
+        ruleRows(card(), NavPolicy.Rule.SMART_WARNINGS)
+        hint("Looks for navigation right after load, repeated redirects, pop-ups without a tap and unrelated or ad-like destinations. These are signs, not proof; ordinary external links are never called malicious.")
+
+        buildDomainList(NavConfirm.ListKind.ALLOWED, "Allowed domains", "nav_allowed",
+            "Never asks. Examples: example.com, *.example.com, tel:")
+        buildDomainList(NavConfirm.ListKind.BLOCKED, "Blocked domains", "nav_blocked",
+            "Always refused, also inside redirect chains.")
+
+        section("Website rules")
+        val sites = card()
+        val modes = NavConfirm.siteModes()
+        val current = NavPolicy.hostOf(pageUrl)
+        val hosts = (modes.keys + listOfNotNull(current)).distinct().sorted()
+        for (h in hosts) {
+            val m = modes[h]
+            valueRow(sites, if (h == hosts.first()) "nav_sites" else null, R.drawable.ic_open, h,
+                if (h == current) "Current website" else "Tap to change",
+                when (m) { NavPolicy.SiteMode.ALLOW -> "Always allow"; NavPolicy.SiteMode.BLOCK -> "Always block"; NavPolicy.SiteMode.ASK -> "Always ask"; null -> "Default rules" }) {
+                val labels = arrayOf("Use the default rules", "Always ask", "Always allow", "Always block")
+                val sel = when (m) { null -> 0; NavPolicy.SiteMode.ASK -> 1; NavPolicy.SiteMode.ALLOW -> 2; NavPolicy.SiteMode.BLOCK -> 3 }
+                choiceDialog(h, labels, sel) { which ->
+                    NavConfirm.setSiteMode(h, when (which) { 1 -> NavPolicy.SiteMode.ASK; 2 -> NavPolicy.SiteMode.ALLOW; 3 -> NavPolicy.SiteMode.BLOCK; else -> null })
+                    refresh()
+                }
+            }
+        }
+        navRow(sites, if (hosts.isEmpty()) "nav_sites" else null, R.drawable.ic_add, "Add website", "Set how one website may navigate away") {
+            inputDialog("Website", "Host name, for example example.com", textField("example.com", ""),
+                validate = { v -> val e = NavConfirm.normalizeEntry(v); if (e == null || e.contains(':') || e.startsWith("*")) "Enter a host name" else null }
+            ) { v ->
+                NavConfirm.normalizeEntry(v)?.let { NavConfirm.setSiteMode(it, NavPolicy.SiteMode.ASK) }
+                refresh()
+            }
+        }
+        hint("These apply to navigation away from that website. Always allow skips every question, Always block refuses anything that leaves the website, Always ask asks for every cross-origin move.")
+
+        section("Reset")
+        val reset = card()
+        row(reset, null, R.drawable.ic_reset, "Reset rules to defaults", "Lists and website rules are kept").root.setOnClickListener {
+            confirmDialog("Reset rules?", "All switches on this page go back to their defaults.", "Reset") { NavConfirm.resetRules(); refresh() }
+        }
+        hint("Coverage: link taps, script and meta-refresh navigation, HTTP redirects, new windows, external app links and (while page scripts run) forms are handled. A page that calls form.submit() directly, or a navigation WebView does not report, cannot be intercepted.")
+    }
+
+    private fun buildDomainList(kind: NavConfirm.ListKind, heading: String, id: String, description: String) {
+        section(heading)
+        val card = card()
+        val entries = NavConfirm.list(kind).toList()
+        entries.forEachIndexed { i, e ->
+            row(card, if (i == 0) id else null, if (kind == NavConfirm.ListKind.ALLOWED) R.drawable.ic_shield else R.drawable.ic_close, e, "Tap to remove")
+                .root.setOnClickListener {
+                    confirmDialog("Remove $e?", null, "Remove") { NavConfirm.removeFromList(kind, e); refresh() }
+                }
+        }
+        navRow(card, if (entries.isEmpty()) id else null, R.drawable.ic_add, "Add domain", description) {
+            inputDialog(heading, description, textField("example.com", ""),
+                validate = { v -> if (NavConfirm.normalizeEntry(v) == null) "Not a valid domain" else null }
+            ) { v -> NavConfirm.normalizeEntry(v)?.let { NavConfirm.addToList(kind, it) }; refresh() }
         }
     }
 

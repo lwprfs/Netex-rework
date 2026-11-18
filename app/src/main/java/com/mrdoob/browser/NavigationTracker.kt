@@ -436,6 +436,29 @@ object NavigationTracker {
         active?.id ?: 0L
     }
 
+    /** The page load in progress was started by the user (typed address, tap, Netex button). */
+    fun activeStartedByUser(): Boolean = synchronized(lock) {
+        val a = active
+        a != null && a.status == Status.STARTED && a.userInitiated
+    }
+
+    /** Requests of the load in progress that were part of a redirect chain so far. */
+    fun activeHopCount(): Int = synchronized(lock) {
+        val a = active
+        if (a != null && a.status == Status.STARTED) a.hops.size else 0
+    }
+
+    /** The URL that issued the most recent redirect of the load in progress. */
+    fun lastHopUrl(): String? = synchronized(lock) {
+        val a = active
+        if (a != null && a.status == Status.STARTED) a.hops.lastOrNull()?.url else null
+    }
+
+    fun activeHopUrls(): List<String> = synchronized(lock) {
+        val a = active
+        if (a != null && a.status == Status.STARTED) a.hops.map { it.url } else emptyList()
+    }
+
     fun recentAutomatic(host: String, withinMs: Long): Int = synchronized(lock) {
         val now = System.currentTimeMillis()
         auto.count { it.host == host && now - it.time <= withinMs }

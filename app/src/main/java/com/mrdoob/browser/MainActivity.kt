@@ -374,6 +374,8 @@ class MainActivity : AppCompatActivity() {
 
         @SuppressLint("AddJavascriptInterface")
         webView.addJavascriptInterface(DevToolsFlag(), DevToolsFlag.JS_OBJECT_NAME)
+        @SuppressLint("AddJavascriptInterface")
+        webView.addJavascriptInterface(NavGuardFlag(), NavGuardFlag.JS_OBJECT_NAME)
 
         HarRecorder.onStarted = {
             webView.post {
@@ -416,6 +418,9 @@ class MainActivity : AppCompatActivity() {
             WebSettingsCompat.setAlgorithmicDarkeningAllowed(settings, true)
         }
         settings.setSupportZoom(true)
+        // New-window requests (target=_blank, window.open) reach onCreateWindow, where they are confirmed.
+        settings.setSupportMultipleWindows(true)
+        settings.javaScriptCanOpenWindowsAutomatically = true
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
         mobileUserAgent = settings.userAgentString
@@ -427,14 +432,18 @@ class MainActivity : AppCompatActivity() {
         applyDesktopMode()
 
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                NavigationTracker.onShouldOverride(
-                    request.url.toString(), request.isForMainFrame, request.isRedirect, request.hasGesture()
-                )
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val url = request.url.toString()
+                // Loop protection's "stop automatic navigation" comes first.
+                if (NavigationTracker.onShouldOverride(url, request.isForMainFrame, request.isRedirect, request.hasGesture())) return true
+                if (!request.isForMainFrame) return false
+                return onMainFrameNavigation(url, request.isRedirect, request.hasGesture())
+            }
 
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
                 RequestHeaders.remember(request)
                 NavigationTracker.onIntercept(request)
+                NavConfirm.blockedMainFrame(request)?.let { return it }
                 return RequestRules.intercept(request)
             }
 
@@ -445,6 +454,7 @@ class MainActivity : AppCompatActivity() {
                 DetectionStore.reset()
 
                 val started = NavigationTracker.onPageStarted(url)
+                pageEventAt = System.currentTimeMillis()
                 if (started == null || started.first) {
                     val host = DevToolsPrefs.siteKey(url)
                     val type = started?.type ?: NavigationTracker.Type.LOAD
@@ -470,6 +480,9 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String?) {
                 NavigationTracker.onPageFinished(url)
+                pageEventAt = System.currentTimeMillis()
+                NavConfirm.noteVisited(url)
+                NavConfirm.endChain()
                 scheduleBridgeCheck(NavigationTracker.currentId(), url)
                 setLoading(false)
                 updateNavState()
@@ -515,6 +528,35 @@ class MainActivity : AppCompatActivity() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 setLoading(newProgress in 0..99)
                 setUrlBubbleProgress(newProgress)
+            }
+
+            override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
+                val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+                // Netex has one tab: the new window's address is read from a throw-away WebView, confirmed, then loaded here.
+                val temp = WebView(this@MainActivity)
+                temp.settings.javaScriptEnabled = false
+                val done = java.util.concurrent.atomic.AtomicBoolean(false)
+                fun finish(url: String?) {
+                    if (url.isNullOrEmpty() || url == "about:blank" || !done.compareAndSet(false, true)) return
+                    binding.root.post {
+                        temp.stopLoading()
+                        temp.destroy()
+                        onNewWindowRequest(url, isUserGesture)
+                    }
+                }
+                temp.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean { finish(r.url.toString()); return true }
+                    override fun onPageStarted(v: WebView, u: String?, f: Bitmap?) { finish(u) }
+                    override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): android.webkit.WebResourceResponse? {
+                        if (r.isForMainFrame) finish(r.url.toString())
+                        return android.webkit.WebResourceResponse("text/plain", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0)))
+                    }
+                }
+                transport.webView = temp
+                resultMsg.sendToTarget()
+                // window.open() with no address (content written by script) never yields one: do not leak the WebView.
+                binding.root.postDelayed({ if (done.compareAndSet(false, true)) temp.destroy() }, 8000)
+                return true
             }
 
             override fun onReceivedIcon(view: WebView, icon: Bitmap?) {
@@ -729,6 +771,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 }
+                launch { NavConfirm.forms.collect { handleFormAsk(it) } }
                 launch {
                     kotlinx.coroutines.flow.merge(
                         DevToolsPrefs.revision.map { 0 }, HarRecorder.status.map { 0 }, DevToolsEvents.revision.map { 0 }
@@ -829,6 +872,213 @@ class MainActivity : AppCompatActivity() {
             }
             panel.deliverDevTools("showHar", json)
         }
+    }
+
+
+    // --- Navigation confirmation ----------------------------------------------------------------------------
+
+    private var pageEventAt = 0L
+
+    private val passSchemes = setOf("about", "data", "blob", "javascript", "file", "content", "ws", "wss", "view-source")
+
+    /** shouldOverrideUrlLoading for the main frame. Returns true when the navigation is cancelled here. */
+    private fun onMainFrameNavigation(url: String, isRedirect: Boolean, hasGesture: Boolean): Boolean {
+        if (!BrowserPrefs.navigationConfirmation(this)) return false
+        if (NavConfirm.passOnce(url)) return false
+        if (!NavPolicy.isWeb(url)) {
+            val scheme = NavPolicy.schemeOf(url) ?: return false
+            if (scheme in passSchemes) return false
+            val req = NavPolicy.Request(currentUrl, url, NavPolicy.Type.EXTERNAL_SCHEME, hasGesture)
+            val action = evaluateNavigation(req, emptyList()) { ok -> if (ok) continueNavigation(req, emptyList()) }
+            // WebView cannot open another app by itself, so even an allowed link is launched (and cancelled) here.
+            if (action == NavPolicy.Action.ALLOW) launchExternalApp(url)
+            return true
+        }
+        val current = currentUrl.takeIf { NavPolicy.isWeb(it) } ?: return false
+        val from = if (isRedirect) NavigationTracker.lastHopUrl() ?: current else current
+
+        if (isRedirect && NavConfirm.inApprovedChain()) {
+            // The user already approved this chain: no second dialog. Blocked domains still apply.
+            val host = NavPolicy.hostOf(url)
+            if (host != null && NavPolicy.listMatches(NavConfirm.list(NavConfirm.ListKind.BLOCKED), host, false)) {
+                refuse(url, "$host is on your blocked list (redirect chain)")
+                return true
+            }
+            val hops = NavConfirm.noteChainHop(url)
+            if (hops == 4 || hops == 8) {
+                com.google.android.material.snackbar.Snackbar.make(binding.root, "This redirect chain has $hops hops", 4000).show()
+            }
+            return false
+        }
+
+        val userInit = hasGesture || (isRedirect && NavigationTracker.activeStartedByUser())
+        val type = NavConfirm.classify(url, isRedirect, hasGesture)
+        val hops = NavigationTracker.activeHopCount()
+        val chain = if (isRedirect) {
+            val seen = NavigationTracker.activeHopUrls()
+            (if (seen.firstOrNull() != current) listOf(current) else emptyList()) + seen + url
+        } else emptyList()
+        val req = NavPolicy.Request(from, url, type, userInit, System.currentTimeMillis() - pageEventAt, hops)
+        val action = evaluateNavigation(req, chain) { ok -> if (ok) continueNavigation(req, chain) }
+        return action != NavPolicy.Action.ALLOW
+    }
+
+    /** A target=_blank link or window.open(): confirm, then load in this tab. */
+    private fun onNewWindowRequest(url: String, userGesture: Boolean) {
+        if (!BrowserPrefs.navigationConfirmation(this)) { binding.webView.loadUrl(url); return }
+        val type = if (NavPolicy.isWeb(url)) NavPolicy.Type.NEW_WINDOW else NavPolicy.Type.EXTERNAL_SCHEME
+        val req = NavPolicy.Request(currentUrl, url, type, userGesture, System.currentTimeMillis() - pageEventAt, 0)
+        val action = evaluateNavigation(req, emptyList()) { ok -> if (ok) continueNavigation(req, emptyList()) }
+        if (action == NavPolicy.Action.ALLOW) continueNavigation(req, emptyList())
+    }
+
+    /**
+     * Applies [NavPolicy]. ALLOW: the caller lets the navigation go. BLOCK or ASK: the caller must cancel it; for ASK
+     * a dialog follows and [resume] gets the user's answer. Only one dialog is ever open, and a destination the user
+     * just cancelled is dropped silently, so a page that keeps trying cannot create a loop or a stream of dialogs.
+     */
+    private fun evaluateNavigation(req: NavPolicy.Request, chain: List<String>, resume: (Boolean) -> Unit): NavPolicy.Action {
+        val d = NavPolicy.decide(req, NavConfirm.config())
+        return when (d.action) {
+            NavPolicy.Action.ALLOW -> NavPolicy.Action.ALLOW
+            NavPolicy.Action.BLOCK -> {
+                refuse(req.to, d.reason)
+                NavPolicy.Action.BLOCK
+            }
+            NavPolicy.Action.ASK -> {
+                val key = NavConfirm.keyOf(req.to)
+                // Only navigation nobody asked for is dropped silently; a tap always gets its dialog.
+                if (!req.userInitiated && NavConfirm.recentlyCancelled(key)) {
+                    silentRepeat(req.to, key)
+                    NavPolicy.Action.BLOCK
+                } else if (!NavConfirm.beginPrompt(key)) {
+                    NavPolicy.Action.BLOCK
+                } else {
+                    // A moment for the page's own hints (navigation type) to arrive before the dialog is built.
+                    binding.root.postDelayed({ showNavigationDialog(req, d, chain, key, resume) }, 150)
+                    NavPolicy.Action.ASK
+                }
+            }
+        }
+    }
+
+    private fun showNavigationDialog(
+        req: NavPolicy.Request, d: NavPolicy.Decision, chain: List<String>, key: String, resume: (Boolean) -> Unit
+    ) {
+        if (isFinishing || isDestroyed) { NavConfirm.endPrompt(); return }
+        val type = if (req.type == NavPolicy.Type.AUTOMATIC) NavConfirm.classify(req.to, false, false) else req.type
+        val external = type == NavPolicy.Type.EXTERNAL_SCHEME
+        val info = NavConfirmDialog.Info(
+            currentSite = NavPolicy.hostOf(req.from) ?: "",
+            destinationSite = NavPolicy.hostOf(req.to) ?: (NavPolicy.schemeOf(req.to) ?: "unknown") + ": link",
+            url = req.to,
+            type = type,
+            initiator = type.initiator,
+            reason = d.reason,
+            relation = d.relation,
+            chain = chain.map { NavPolicy.hostOf(it) ?: it },
+            warnings = d.warnings,
+            external = external
+        )
+        val entry = if (external) (NavPolicy.schemeOf(req.to) ?: "") + ":" else NavPolicy.hostOf(req.to) ?: ""
+        NavConfirmDialog.show(this, info) { choice ->
+            NavConfirm.endPrompt()
+            when (choice) {
+                NavConfirmDialog.Choice.CANCEL -> {
+                    NavConfirm.noteCancelled(key)
+                    NavConfirm.report(DevToolsEvents.Severity.INFO, req.to, "Cancelled by you (${type.label})", listOf("Stayed on the page"))
+                    NavConfirm.logRefused(req.to, "Cancelled by user")
+                    resume(false)
+                }
+                NavConfirmDialog.Choice.CONTINUE -> {
+                    NavConfirm.report(DevToolsEvents.Severity.INFO, req.to, "Allowed once by you (${type.label})")
+                    resume(true)
+                }
+                NavConfirmDialog.Choice.ALWAYS_ALLOW -> {
+                    if (entry.isNotEmpty()) NavConfirm.addToList(NavConfirm.ListKind.ALLOWED, entry)
+                    NavConfirm.report(DevToolsEvents.Severity.INFO, req.to, "Always allowed: $entry", listOf("Added to allowed list"))
+                    resume(true)
+                }
+                NavConfirmDialog.Choice.ALWAYS_BLOCK -> {
+                    if (entry.isNotEmpty()) NavConfirm.addToList(NavConfirm.ListKind.BLOCKED, entry)
+                    NavConfirm.noteCancelled(key)
+                    NavConfirm.report(DevToolsEvents.Severity.WARNING, req.to, "Always blocked: $entry", listOf("Added to blocked list"))
+                    NavConfirm.logRefused(req.to, "Blocked by user: $entry")
+                    resume(false)
+                }
+            }
+        }
+    }
+
+    /** The user said yes: load it here (or launch the app). Marked as the user's own navigation so it is not a loop. */
+    private fun continueNavigation(req: NavPolicy.Request, chain: List<String>) {
+        if (req.type == NavPolicy.Type.EXTERNAL_SCHEME) { launchExternalApp(req.to); return }
+        NavConfirm.allowOnce(req.to)
+        NavConfirm.approveChain(chain.ifEmpty { listOfNotNull(req.from, req.to) })
+        userNavigated("load")
+        val headers = HashMap<String, String>()
+        val origin = NavPolicy.originOf(req.from)
+        if (req.type != NavPolicy.Type.HTTP_REDIRECT && origin != null && NavPolicy.originOf(req.to) != origin) headers["Referer"] = "$origin/"
+        binding.webView.loadUrl(req.to, headers)
+    }
+
+    private fun refuse(url: String, reason: String) {
+        val key = NavConfirm.keyOf(url)
+        val n = NavConfirm.noteSilentBlock("b:$key")
+        NavConfirm.report(DevToolsEvents.Severity.WARNING, url, reason, listOf("Navigation blocked"))
+        NavConfirm.logRefused(url, reason)
+        if (n == 1 || n % 5 == 0) {
+            com.google.android.material.snackbar.Snackbar.make(binding.root, "Blocked navigation to ${NavPolicy.hostOf(url) ?: url}", 4000).show()
+        }
+    }
+
+    private fun silentRepeat(url: String, key: String) {
+        val n = NavConfirm.noteSilentBlock(key)
+        NavConfirm.report(DevToolsEvents.Severity.INFO, url, "Repeated navigation attempt dropped after you cancelled it", listOf("No dialog shown"))
+        if (n == 3) {
+            val host = NavPolicy.hostOf(url)
+            com.google.android.material.snackbar.Snackbar.make(binding.root, "This page keeps trying to open ${host ?: url}", 6000).apply {
+                if (host != null) setAction("Always block") {
+                    NavConfirm.addToList(NavConfirm.ListKind.BLOCKED, host)
+                    NavConfirm.logRefused(url, "Blocked by user: $host")
+                }
+            }.show()
+        }
+    }
+
+    private fun launchExternalApp(url: String) {
+        try {
+            val intent = if (url.startsWith("intent:", ignoreCase = true)) Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+            else Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            // A web page must not choose the component, a selector or URI grants.
+            intent.addCategory(Intent.CATEGORY_BROWSABLE)
+            intent.component = null
+            intent.selector = null
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(intent)
+        } catch (e: android.content.ActivityNotFoundException) {
+            val fallback = try {
+                if (url.startsWith("intent:", true)) Intent.parseUri(url, Intent.URI_INTENT_SCHEME).getStringExtra("browser_fallback_url") else null
+            } catch (_: Exception) { null }
+            if (NavPolicy.isWeb(fallback)) binding.webView.loadUrl(fallback!!)
+            else Toast.makeText(this, "No app can open this link", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "This link could not be opened", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** A form on the page wants to leave the site (nav-guard.js held it). */
+    private fun handleFormAsk(ask: NavConfirm.FormAsk) {
+        if (!NavPolicy.isWeb(ask.to)) return
+        val req = NavPolicy.Request(ask.from, ask.to, NavPolicy.Type.FORM, true, System.currentTimeMillis() - pageEventAt, 0)
+        fun reply(ok: Boolean) {
+            if (ok) NavPolicy.hostOf(ask.to)?.let { NavConfirm.allowHostOnce(it) }
+            val id = org.json.JSONObject.quote(ask.id)
+            binding.webView.evaluateJavascript("window.__netex&&window.__netex.navResume&&window.__netex.navResume($id,$ok)", null)
+        }
+        val action = evaluateNavigation(req, emptyList()) { ok -> reply(ok) }
+        if (action == NavPolicy.Action.ALLOW) reply(true)
+        else if (action == NavPolicy.Action.BLOCK) reply(false)
     }
 
     private fun handleDevToolsAction(msg: JSONObject) {

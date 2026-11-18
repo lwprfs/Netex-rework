@@ -13,6 +13,7 @@ object DocumentStartScripts {
         Asset("threejs-devtools/background.js", wrap = Wrap.IIFE),
         Asset("network-shim.js"),
         Asset("devtools-probe.js"),
+        Asset("nav-guard.js"),
         Asset("orientation-shim.js"),
         Asset("console-shim.js"),
     )

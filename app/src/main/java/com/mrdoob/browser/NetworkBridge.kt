@@ -17,6 +17,8 @@ class NetworkBridge(
         when (obj.optString("type")) {
             "blob-response" -> onBlobResponse(obj.optString("requestId"), obj.optString("body"))
             "hello" -> ProtectionEngine.onBridgeHello(obj.optBoolean("top", true))
+            "nav-hint" -> NavConfirm.onHint(obj)
+            "nav-form" -> NavConfirm.onFormAsk(obj)
             "devtools-signal" -> ProtectionEngine.onPageSignal(obj)
             "" -> addRecord(obj)
         }

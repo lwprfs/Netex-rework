@@ -109,3 +109,15 @@ Advanced Settings). Every switch is wired to real behaviour and shows whether it
 
 Not verified on a device in this change set: the code was written without a Kotlin compiler available.
 Build and run the ten scenarios before shipping.
+
+## Navigation confirmation
+
+Settings → Privacy & Security → Navigation Protection. `NavPolicy` (pure Kotlin, unit-tested in
+`app/src/test`) decides allow / ask / block from the rules, allowed and blocked domain lists and per-website
+modes. `MainActivity` applies it to `shouldOverrideUrlLoading` (taps, script and meta-refresh navigation, HTTP
+redirects, external URL schemes) and `WebChromeClient.onCreateWindow` (target=_blank, window.open). Forms are held
+by `nav-guard.js` because WebView never reports POST navigations. One dialog per redirect chain, one dialog at a
+time, and a cancelled destination is dropped silently for 20 s so cancelling cannot loop. Blocked domains are also
+refused for redirect hops in `shouldInterceptRequest`, and refused or cancelled navigations appear in the Network
+tab and the Developer Tools event dashboard. Not covered: `form.submit()` called directly, navigation WebView does
+not report, and the Referer header is limited to the origin when a confirmed navigation is re-issued.

@@ -21,7 +21,8 @@ object DevToolsEvents {
         NAV_COMPLETED("Main-frame navigation completed"),
         NAV_FAILED("Main-frame navigation failed"),
         CAPTURE_FAILURE("Request capture failure"),
-        PROTECTION_ACTIVATED("Protection activated")
+        PROTECTION_ACTIVATED("Protection activated"),
+        NAV_CONFIRMATION("Navigation confirmation")
     }
 
     enum class Severity { INFO, WARNING, CRITICAL }

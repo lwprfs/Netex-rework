@@ -88,7 +88,17 @@ object BrowserPrefs {
     fun setThirdPartyCookies(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_3P, on).apply() }
 
     fun navigationConfirmation(context: Context): Boolean = p(context).getBoolean(KEY_NAV_CONFIRM, true)
-    fun setNavigationConfirmation(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_NAV_CONFIRM, on).apply() }
+
+    @Volatile private var navConfirmCache: Boolean? = null
+
+    /** Context-free read for WebView threads; refreshed whenever the switch changes or [navigationConfirmation] is read. */
+    fun isNavigationConfirmationOn(): Boolean = navConfirmCache ?: true
+    fun setNavigationConfirmation(context: Context, on: Boolean) {
+        navConfirmCache = on
+        p(context).edit().putBoolean(KEY_NAV_CONFIRM, on).apply()
+    }
+
+    fun primeNavigationConfirmation(context: Context) { navConfirmCache = navigationConfirmation(context) }
 
     fun customUserAgent(context: Context): String = p(context).getString(KEY_UA, "").orEmpty()
     fun setCustomUserAgent(context: Context, ua: String) { p(context).edit().putString(KEY_UA, ua.trim()).apply() }
