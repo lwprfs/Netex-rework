@@ -6,6 +6,7 @@ local.properties
 .idea/
 build/
 captures/
+devtools/
 .externalNativeBuild
 .cxx
 *.apk
