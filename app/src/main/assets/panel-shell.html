@@ -87,6 +87,7 @@ code.hljs { background: transparent !important; padding: 0 !important; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px 0; }
 .meta .tag { padding: 3px 9px; border-radius: 999px; background: var(--surface); color: var(--fg-dim); font-size: 11.5px; }
 .fullurl { padding: 8px 12px 0; font: 11.5px/1.4 var(--mono); color: var(--fg-dim); word-break: break-all; }
+.harpre { margin: 6px 8px; padding: 8px; border-radius: 8px; background: var(--surface); font: 11px/1.4 monospace; white-space: pre; overflow: auto; user-select: text; }
 .actions { display: flex; gap: 6px; padding: 10px 12px; }
 .actions button { padding: 6px 12px; border-radius: 999px; background: var(--surface); font-weight: 600; font-size: 12px; }
 .actions button:active { background: var(--pc); }
@@ -214,7 +215,7 @@ iframe.hp { width: 100%; height: 320px; border: 0; background: #fff; display: bl
     <button type="button" class="har-btn" id="harBtn">HAR</button>
   </div>
   <div class="bar" style="padding-top:6px;padding-bottom:6px"><div class="chips" id="netChips">
-    <button class="chip on" data-t="all">All</button><button class="chip" data-t="doc">Doc</button><button class="chip" data-t="js">JS</button><button class="chip" data-t="css">CSS</button><button class="chip" data-t="img">Img</button><button class="chip" data-t="media">Media</button><button class="chip" data-t="font">Font</button><button class="chip" data-t="fetch">Fetch</button><button class="chip" data-t="xhr">XHR</button><button class="chip" data-t="data">Data</button><button class="chip" data-t="other">Other</button><button class="chip" data-t="failed">Failed</button><button class="chip" data-t="nav">Nav</button><button class="chip" data-t="err">Errors</button><button class="chip" data-t="slow">Slow</button><button class="chip" data-t="more">Filters ▾</button>
+    <button class="chip on" data-t="all">All</button><button class="chip" data-t="doc">Doc</button><button class="chip" data-t="js">JS</button><button class="chip" data-t="css">CSS</button><button class="chip" data-t="img">Img</button><button class="chip" data-t="media">Media</button><button class="chip" data-t="font">Font</button><button class="chip" data-t="fetch">Fetch</button><button class="chip" data-t="xhr">XHR</button><button class="chip" data-t="data">Data</button><button class="chip" data-t="wasm">Wasm</button><button class="chip" data-t="other">Other</button><button class="chip" data-t="failed">Failed</button><button class="chip" data-t="nav">Nav</button><button class="chip" data-t="err">Errors</button><button class="chip" data-t="slow">Slow</button><button class="chip" data-t="more">Filters ▾</button>
   </div></div>
   <div id="netMore" style="display:none">
     <div class="bar" style="padding-top:6px;padding-bottom:6px"><span class="lbl">Method</span><div class="chips" id="netMethods"><button class="chip on" data-m="all">All</button><button class="chip" data-m="GET">GET</button><button class="chip" data-m="POST">POST</button><button class="chip" data-m="PUT">PUT</button><button class="chip" data-m="PATCH">PATCH</button><button class="chip" data-m="DELETE">DELETE</button></div></div>

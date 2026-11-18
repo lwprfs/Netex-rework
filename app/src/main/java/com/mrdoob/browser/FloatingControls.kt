@@ -93,6 +93,15 @@ class FloatingControls(
         }
     }
 
+    private var suppressed = false
+
+    /** Hides the bubble while the developer panel is full screen. */
+    fun setSuppressed(hide: Boolean) {
+        suppressed = hide
+        if (hide && expanded) { expanded = false; render() }
+        bubble?.visibility = if (hide) View.GONE else View.VISIBLE
+    }
+
     fun setEnabled(on: Boolean) {
         enabled = on
         if (!on) expanded = false
@@ -229,6 +238,7 @@ class FloatingControls(
             layoutRing(animate = false)
         }
         attachDrag(view)
+        view.visibility = if (suppressed) View.GONE else View.VISIBLE
         bubble = view
     }
 

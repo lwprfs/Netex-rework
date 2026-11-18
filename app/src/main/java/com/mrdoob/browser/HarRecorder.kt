@@ -211,6 +211,74 @@ object HarRecorder {
         }
     }
 
+
+    // --- HAR viewer ---------------------------------------------------------------------
+
+    class ViewerHar(val text: String, val count: Int, val fromRecording: Boolean)
+
+    /**
+     * The HAR the Network tab's HAR button opens. Uses the recording when there is one, otherwise the
+     * Network tab's own log (bodies trimmed). [type] is the active type chip ("all", "doc", "js", ...), so
+     * "doc" yields a HAR with only the document entries.
+     */
+    fun buildViewerHar(type: String): ViewerHar {
+        val rec = synchronized(lock) { Snapshot(pages.values.toList(), entries.values.toList()) }
+        val fromRecording = rec.entries.isNotEmpty()
+        val snap = if (fromRecording) rec else logSnapshot()
+        val picked = snap.entries.filter { type.isEmpty() || type == "all" || matchesType(it.record, type) }
+        val used = picked.mapNotNull { it.pageId }.toSet()
+        val out = Snapshot(snap.pages.filter { it.id in used }, picked)
+        val sw = java.io.StringWriter()
+        HarBuilder.write(out, sw)
+        return ViewerHar(sw.toString(), picked.size, fromRecording)
+    }
+
+    private fun logSnapshot(): Snapshot {
+        val recs = NetworkLog.snapshot()
+        val pageUrl = recs.groupBy { it.navId }.mapValues { (_, l) -> (l.firstOrNull { it.isDocument } ?: l.first()).url }
+        val pages = LinkedHashMap<Long, Page>()
+        val list = recs.map { r ->
+            val pg = pages.getOrPut(r.navId) {
+                Page("page_${pages.size + 1}", "nav${r.navId}", pageUrl[r.navId] ?: r.url, r.startedAt, "")
+            }
+            Entry(r, pg.id, r.startedAt)
+        }
+        return Snapshot(pages.values.toList(), list)
+    }
+
+    private val IMG_EXT = Regex("\\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)(\\?|#|$)", RegexOption.IGNORE_CASE)
+    private val MEDIA_EXT = Regex("\\.(mp4|webm|m4a|mp3|ogg|wav|m3u8|mpd)(\\?|#|$)", RegexOption.IGNORE_CASE)
+    private val FONT_EXT = Regex("\\.(woff2?|ttf|otf|eot)(\\?|#|$)", RegexOption.IGNORE_CASE)
+    private val JS_EXT = Regex("\\.m?js(\\?|#|$)", RegexOption.IGNORE_CASE)
+    private val CSS_EXT = Regex("\\.css(\\?|#|$)", RegexOption.IGNORE_CASE)
+
+    /** Same classification the Network tab uses for its type chips. */
+    private fun panelType(r: NetworkLog.Record): String {
+        val ct = r.contentType?.lowercase().orEmpty()
+        val u = r.url
+        return when {
+            ct.startsWith("image/") || IMG_EXT.containsMatchIn(u) -> "img"
+            ct.startsWith("video/") || ct.startsWith("audio/") || MEDIA_EXT.containsMatchIn(u) -> "media"
+            ct.startsWith("font/") || ct.contains("woff") || FONT_EXT.containsMatchIn(u) -> "font"
+            ct.contains("wasm") || Regex("\\.wasm(\\?|#|$)", RegexOption.IGNORE_CASE).containsMatchIn(u) -> "wasm"
+            ct.contains("html") -> "doc"
+            ct.contains("javascript") || ct.contains("ecmascript") || JS_EXT.containsMatchIn(u) -> "js"
+            ct.contains("css") || CSS_EXT.containsMatchIn(u) -> "css"
+            ct.contains("json") || ct.contains("xml") || ct.startsWith("text/") -> "data"
+            else -> "other"
+        }
+    }
+
+    private fun matchesType(r: NetworkLog.Record, type: String): Boolean = when (type) {
+        "doc" -> r.isDocument || panelType(r) == "doc"
+        "fetch", "xhr" -> r.kind == type
+        "failed" -> r.isFailure
+        "err" -> r.isFailure
+        "nav" -> r.isDocument && r.navId != 0L
+        "slow" -> !r.pending && r.durationMs > 1000
+        else -> panelType(r) == type
+    }
+
     fun onPageTitle(title: String?) {
         if (title.isNullOrBlank()) return
         synchronized(lock) {

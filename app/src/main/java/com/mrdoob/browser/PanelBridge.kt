@@ -8,6 +8,7 @@ class PanelBridge(
     private val onFetchBlob: (String) -> Unit,
     private val onEval: (String, String) -> Unit,
     private val onHarMenu: () -> Unit,
+    private val onHarOpen: (JSONObject) -> Unit,
     private val onCopy: (String) -> Unit,
     private val onShare: (String, String) -> Unit,
     private val onBlock: (String) -> Unit,
@@ -25,6 +26,7 @@ class PanelBridge(
             "fetch-blob" -> onFetchBlob(obj.optString("requestId"))
             "eval" -> onEval(obj.optString("evalId"), obj.optString("source"))
             "har-menu" -> onHarMenu()
+            "har-open" -> onHarOpen(obj)
             "copy" -> onCopy(obj.optString("text"))
             "share" -> onShare(obj.optString("title"), obj.optString("text"))
             "block" -> onBlock(obj.optString("pattern"))

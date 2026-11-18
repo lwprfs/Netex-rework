@@ -94,6 +94,7 @@ class MainActivity : AppCompatActivity() {
         onFetchBlob = { rid -> fetchBlobFromMain(rid) },
         onEval = { evalId, source -> evalInPage(evalId, source) },
         onHarMenu = { runOnUiThread { showHarSheet() } },
+        onHarOpen = { msg -> runOnUiThread { openHarViewer(msg) } },
         onCopy = { text -> runOnUiThread { copyToClipboard(text, "Copied") } },
         onShare = { title, text -> runOnUiThread { shareText(title, text) } },
         onBlock = { pattern -> runOnUiThread { blockPattern(pattern) } },
@@ -795,6 +796,41 @@ class MainActivity : AppCompatActivity() {
         if (crashed) ProtectionEngine.onRecreatedAfterCrash()
     }
 
+
+    // --- HAR viewer (the Network tab's HAR button) ---------------------------------------
+
+    private var harViewFile: java.io.File? = null
+
+    private fun openHarViewer(msg: JSONObject) {
+        when (msg.optString("action")) {
+            "share" -> { harViewFile?.let { HarExporter.shareFile(this, it) }; return }
+            "save" -> { harViewFile?.let { f -> lifecycleScope.launch { HarExporter.saveFile(this@MainActivity, f) } }; return }
+            "settings" -> { showHarSheet(); return }
+        }
+        val filter = msg.optString("filter", "all").filter { it.isLetterOrDigit() }.ifEmpty { "all" }
+        val pageUrl = currentUrl
+        lifecycleScope.launch {
+            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val har = HarRecorder.buildViewerHar(filter)
+                val dir = java.io.File(cacheDir, "har/view").apply { mkdirs() }
+                val file = java.io.File(dir, HarBuilder.fileBase(listOf(pageUrl)) + "_" + filter + ".har")
+                file.writeText(har.text)
+                harViewFile = file
+                val limit = 600_000
+                JSONObject()
+                    .put("filter", filter)
+                    .put("count", har.count)
+                    .put("bytes", file.length())
+                    .put("name", file.name)
+                    .put("source", if (har.fromRecording) "recording" else "log")
+                    .put("truncated", har.text.length > limit)
+                    .put("preview", har.text.take(limit))
+                    .toString()
+            }
+            panel.deliverDevTools("showHar", json)
+        }
+    }
+
     private fun handleDevToolsAction(msg: JSONObject) {
         val host = DevToolsPrefs.siteKey(currentUrl) ?: DevToolsPrefs.currentHost
         when (msg.optString("action")) {
@@ -904,11 +940,53 @@ class MainActivity : AppCompatActivity() {
         menu.show()
     }
 
-    private fun toggleFullscreenPanel() {
-        val max = maxPanelHeight()
+    /** True while the developer panel owns the whole screen (page, address bar and tab row hidden). */
+    private var panelFullscreen = false
+    private var heightBeforeFullscreen = 0
+
+    private fun panelHeightPx(): Int =
+        if (panelFullscreen) binding.root.height else binding.bottomPanel.layoutParams.height
+
+    private fun enterPanelFullscreen() {
+        if (panelFullscreen) return
+        panelAnimator?.cancel()
         val current = binding.bottomPanel.layoutParams.height
-        if (current >= max - dp(8)) animatePanelTo(minOf(max, (binding.root.height * 0.5f).toInt()))
-        else animatePanelTo(max)
+        heightBeforeFullscreen = if (current > 0) current else minOf(maxPanelHeight(), (binding.root.height * 0.5f).toInt())
+        panelFullscreen = true
+        binding.webView.visibility = View.GONE
+        binding.chromeContainer.visibility = View.GONE
+        binding.panelTabRow.visibility = View.GONE
+        binding.panelFullBar.visibility = View.VISIBLE
+        binding.panelFullTitle.text = binding.panelTabs.getTabAt(currentTab.ordinal)?.text ?: ""
+        binding.panelFullClear.visibility = if (currentTab == PanelRenderer.Tab.CONSOLE || currentTab == PanelRenderer.Tab.NETWORK) View.VISIBLE else View.INVISIBLE
+        val params = binding.bottomPanel.layoutParams
+        params.height = ViewGroup.LayoutParams.MATCH_PARENT
+        binding.bottomPanel.layoutParams = params
+        ProtectionEngine.setPanelOpen(true)
+        floatingControls.setSuppressed(true)
+        if (currentTab == PanelRenderer.Tab.SOURCE) maybeRefreshSource()
+    }
+
+    /** Back button of the full-screen panel: return to the page with the drawer open at its previous size. */
+    private fun exitPanelFullscreen() {
+        if (!panelFullscreen) return
+        panelFullscreen = false
+        binding.webView.visibility = View.VISIBLE
+        binding.chromeContainer.visibility = View.VISIBLE
+        binding.panelFullBar.visibility = View.GONE
+        binding.panelTabRow.visibility = View.VISIBLE
+        floatingControls.setSuppressed(false)
+        val params = binding.bottomPanel.layoutParams
+        params.height = 0
+        binding.bottomPanel.layoutParams = params
+        binding.root.post {
+            val h = heightBeforeFullscreen.coerceIn(dp(120), maxOf(dp(120), maxPanelHeight()))
+            setPanelHeight(h)
+        }
+    }
+
+    private fun toggleFullscreenPanel() {
+        if (panelFullscreen) exitPanelFullscreen() else enterPanelFullscreen()
     }
 
     private fun hardReload() {
@@ -1197,7 +1275,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
         binding.panelClose.setOnClickListener { animatePanelTo(0) }
-        binding.panelExpand.setOnClickListener { toggleFullscreenPanel() }
+        binding.panelExpand.setOnClickListener { enterPanelFullscreen() }
+        binding.panelFullBack.setOnClickListener { exitPanelFullscreen() }
+        binding.panelFullClear.setOnClickListener { binding.panelClear.performClick() }
     }
 
     private fun excludeFromSystemGestures(view: View) {
@@ -1326,7 +1406,9 @@ class MainActivity : AppCompatActivity() {
     private fun installBackHandler() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (::findBar.isInitialized && findBar.isShown) {
+                if (panelFullscreen) {
+                    exitPanelFullscreen()
+                } else if (::findBar.isInitialized && findBar.isShown) {
                     findBar.hide()
                 } else if (fullscreenView != null) {
                     exitFullscreen()
@@ -1370,7 +1452,7 @@ class MainActivity : AppCompatActivity() {
         return (binding.root.height - binding.chromeContainer.height - minPageHeight).coerceAtLeast(0)
     }
 
-    private fun isPanelOpen(): Boolean = binding.bottomPanel.layoutParams.height > 0
+    private fun isPanelOpen(): Boolean = panelHeightPx() > 0
 
     private fun togglePanel() {
         if (isPanelOpen()) animatePanelTo(0)
@@ -1411,9 +1493,8 @@ class MainActivity : AppCompatActivity() {
         }
         val max = maxPanelHeight()
         if (max > 0) {
-            val full = h > 0 && h >= max - dp(8)
-            binding.panelExpand.setImageResource(if (full) R.drawable.ic_fullscreen_exit else R.drawable.ic_fullscreen)
-            binding.panelExpand.contentDescription = if (full) "Shrink developer tools" else "Expand developer tools"
+            binding.panelExpand.setImageResource(R.drawable.ic_fullscreen)
+            binding.panelExpand.contentDescription = "Open developer tools full screen"
         }
         if (wasClosed && h > 0 && currentTab == PanelRenderer.Tab.SOURCE) maybeRefreshSource()
     }
@@ -1421,7 +1502,7 @@ class MainActivity : AppCompatActivity() {
     private fun maybeRefreshSource() {
         if (!sourceDirty) return
         if (currentTab != PanelRenderer.Tab.SOURCE) return
-        if (binding.bottomPanel.layoutParams.height <= 0) return
+        if (panelHeightPx() <= 0) return
         sourceDirty = false
         panel.refreshSource()
     }

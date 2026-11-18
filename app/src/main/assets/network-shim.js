@@ -260,7 +260,8 @@
   // only reported while a HAR recording runs, with full bodies re-read from the HTTP cache.
   var KIND_CT = {
     document: 'text/html', script: 'application/javascript', style: 'text/css',
-    image: 'image/*', font: 'font/*', media: '*/*', beacon: '*/*', other: '*/*'
+    image: 'image/*', font: 'font/*', media: '*/*', beacon: '*/*', other: '*/*',
+    data: 'application/json', wasm: 'application/wasm', manifest: 'application/manifest+json'
   };
 
   function kindOf(entry) {
@@ -280,16 +281,18 @@
     if (/^(woff2?|ttf|otf|eot)$/.test(ext)) return 'font';
     if (/^(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/.test(ext)) return 'image';
     if (/^(mp4|webm|ogg|mp3|wav|m4a|aac|mov)$/.test(ext)) return 'media';
+    if (/^(json|jsonld|geojson|ndjson|xml|csv|txt|yaml|yml|rss|atom)$/.test(ext)) return 'data';
+    if (ext === 'wasm') return 'wasm';
+    if (ext === 'webmanifest' || /manifest\.json$/i.test(String(entry.name || '').split(/[?#]/)[0])) return 'manifest';
     return 'other';
   }
 
-  // Panel rows: documents, frames and images are always reported (as before). Every other
-  // type is only reported while a HAR recording runs and that type is switched on.
+  // Panel rows: every request type is reported (documents, scripts, styles, fonts, images, media, data,
+  // wasm, manifests, other). The HAR's own per-type switches only decide what goes into the .har file.
   function classify(entry) {
     if (entry.entryType !== 'navigation' && entry.entryType !== 'resource') return null;
     var kind = kindOf(entry);
     if (kind === 'fetch' || kind === 'xhr') return null; // covered by the fetch / XHR patches
-    if (kind !== 'document' && kind !== 'image' && !harOpt('kind:' + kind)) return null;
     return KIND_CT[kind];
   }
 
@@ -332,7 +335,7 @@
     if (!harOpt('kind:' + kind)) return false;
     if (kind === 'document') return harOpt('bodies'); // main frame + iframes: real server HTML
     if (kind === 'font') return harOpt('fonts');
-    if (kind === 'script' || kind === 'style') return harOpt('bodies');
+    if (kind === 'script' || kind === 'style' || kind === 'data' || kind === 'manifest') return harOpt('bodies');
     return kind === 'other' && harOpt('bodies') && /\.(css|js|mjs|json|svg)(\?|#|$)/i.test(entry.name);
   }
 

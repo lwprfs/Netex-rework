@@ -159,7 +159,7 @@ class PanelRenderer(
     }
 
     fun deliverDevTools(fn: String, json: String) {
-        if (fn !in setOf("showNavHistory", "showEvents", "showDetection")) return
+        if (fn !in setOf("showNavHistory", "showEvents", "showDetection", "showHar")) return
         afterShellLoaded { evalPanel("window.__panel.$fn(${q(json)})") }
     }
 

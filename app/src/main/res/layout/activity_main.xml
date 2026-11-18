@@ -203,7 +203,41 @@
         android:background="?attr/colorSurfaceContainer"
         android:orientation="vertical">
 
+        <!-- Full-screen mode: replaces the tab row with a back button and the tab's name. -->
         <LinearLayout
+            android:id="@+id/panelFullBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="8dp"
+            android:visibility="gone">
+
+            <ImageButton
+                android:id="@+id/panelFullBack"
+                style="@style/PanelIconButton"
+                android:contentDescription="Back to page"
+                android:src="@drawable/ic_back" />
+
+            <TextView
+                android:id="@+id/panelFullTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:paddingStart="4dp"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                android:textColor="?attr/colorOnSurface" />
+
+            <ImageButton
+                android:id="@+id/panelFullClear"
+                style="@style/PanelIconButton"
+                android:contentDescription="Clear"
+                android:src="@drawable/ic_sweep" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/panelTabRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"

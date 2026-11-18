@@ -14,6 +14,9 @@ object HarOptions {
         STYLE("style", "Stylesheets"),
         FONT("font", "Fonts"),
         MEDIA("media", "Audio / video"),
+        DATA("data", "Data (JSON / XML / text)"),
+        WASM("wasm", "WebAssembly"),
+        MANIFEST("manifest", "Manifests"),
         OTHER("other", "Beacons & other");
 
         companion object {
@@ -27,6 +30,9 @@ object HarOptions {
                     "style", "css" -> return STYLE
                     "font" -> return FONT
                     "media" -> return MEDIA
+                    "data", "json" -> return DATA
+                    "wasm" -> return WASM
+                    "manifest" -> return MANIFEST
                     "beacon", "other" -> return OTHER
                 }
                 val ct = contentType?.lowercase().orEmpty()
@@ -37,6 +43,9 @@ object HarOptions {
                     ct.contains("css") -> STYLE
                     ct.startsWith("font/") || ct.contains("woff") -> FONT
                     ct.startsWith("audio/") || ct.startsWith("video/") -> MEDIA
+                    ct.contains("wasm") -> WASM
+                    ct.contains("manifest") -> MANIFEST
+                    ct.contains("json") || ct.contains("xml") || ct.startsWith("text/") -> DATA
                     else -> FETCH
                 }
             }

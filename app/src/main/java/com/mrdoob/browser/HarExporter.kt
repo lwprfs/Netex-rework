@@ -38,6 +38,23 @@ object HarExporter {
         context.startActivity(Intent.createChooser(send, "Share HAR"))
     }
 
+    /** Shares a HAR file made for the viewer (see [HarRecorder.buildViewerHar]). */
+    fun shareFile(context: Context, file: File) {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newRawUri(file.name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(send, "Share HAR"))
+    }
+
+    suspend fun saveFile(context: Context, file: File) {
+        val ok = withContext(Dispatchers.IO) { try { copyToDownloads(context, file) != null } catch (e: Exception) { false } }
+        toast(context, if (ok) "Saved to Downloads/Netex" else "Couldn't save the file")
+    }
+
     suspend fun shareZip(context: Context) {
         val file = HarRecorder.flush() ?: return toast(context, NOTHING)
         val zip = withContext(Dispatchers.IO) {

@@ -81,15 +81,32 @@
     btn.textContent = state === 'recording' ? '● REC' : state === 'paused' ? '❚❚ HAR' : 'HAR';
   }
 
-  document.getElementById('harBtn').addEventListener('click', function () {
-    try { AndroidPanel.postMessage(JSON.stringify({ type: 'har-menu' })); } catch (e) {}
-  });
+  // Tap: open the HAR itself, for the active type chip (All -> everything, Doc -> only documents).
+  // Long press: the HAR settings sheet.
+  (function () {
+    var btn = document.getElementById('harBtn'), timer = null, longPressed = false;
+    btn.addEventListener('pointerdown', function () {
+      longPressed = false;
+      timer = setTimeout(function () {
+        longPressed = true;
+        try { AndroidPanel.postMessage(JSON.stringify({ type: 'har-menu' })); } catch (e) {}
+      }, 550);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
+      btn.addEventListener(ev, function () { clearTimeout(timer); });
+    });
+    btn.addEventListener('click', function () {
+      if (longPressed) { longPressed = false; return; }
+      try { AndroidPanel.postMessage(JSON.stringify({ type: 'har-open', filter: netFilter })); } catch (e) {}
+    });
+  })();
 
   function typeOf(r) {
     var ct = (r.contentType || '').toLowerCase(), u = r.url || '';
     if (/^image\//.test(ct) || /\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)(\?|#|$)/i.test(u)) return 'img';
     if (/^(video|audio)\//.test(ct) || /\.(mp4|webm|m4a|mp3|ogg|wav|m3u8|mpd)(\?|#|$)/i.test(u)) return 'media';
     if (/^font\//.test(ct) || ct.indexOf('woff') !== -1 || /\.(woff2?|ttf|otf|eot)(\?|#|$)/i.test(u)) return 'font';
+    if (ct.indexOf('wasm') !== -1 || /\.wasm(\?|#|$)/i.test(u)) return 'wasm';
     if (ct.indexOf('html') !== -1) return 'doc';
     if (ct.indexOf('javascript') !== -1 || ct.indexOf('ecmascript') !== -1 || /\.m?js(\?|#|$)/i.test(u)) return 'js';
     if (ct.indexOf('css') !== -1 || /\.css(\?|#|$)/i.test(u)) return 'css';
@@ -1477,6 +1494,30 @@
     }
   }
 
+
+  var HAR_LABELS = { all: 'All', doc: 'Doc', js: 'JS', css: 'CSS', img: 'Img', media: 'Media', font: 'Font', fetch: 'Fetch', xhr: 'XHR', data: 'Data', other: 'Other', failed: 'Failed', nav: 'Nav', err: 'Errors', slow: 'Slow' };
+  function showHar(json) {
+    var d; try { d = JSON.parse(json); } catch (e) { return; }
+    var ov = overlay('HAR: ' + (HAR_LABELS[d.filter] || d.filter) + ' (' + d.count + ' entr' + (d.count === 1 ? 'y' : 'ies') + ')');
+    var b = ov.body;
+    var kb = d.bytes > 1048576 ? (d.bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(d.bytes / 1024)) + ' KB';
+    b.appendChild(el('div', 'note', d.name + ' · ' + kb + ' · ' + (d.source === 'recording'
+      ? 'from the HAR recording'
+      : 'built from the Network tab (no recording was running, so bodies are trimmed)')));
+    var acts = el('div', 'actions');
+    [['Share', 'share'], ['Save', 'save'], ['HAR settings', 'settings']].forEach(function (a) {
+      var c = el('button', 'chip', a[0]);
+      c.addEventListener('click', function () { try { AndroidPanel.postMessage(JSON.stringify({ type: 'har-open', action: a[1] })); } catch (e) {} });
+      acts.appendChild(c);
+    });
+    b.appendChild(acts);
+    if (!d.count) { b.appendChild(el('div', 'empty', 'No ' + (HAR_LABELS[d.filter] || d.filter) + ' requests to show yet.')); return; }
+    if (d.truncated) b.appendChild(el('div', 'note', 'Showing the first 600 KB. Share or Save gives the complete file.'));
+    var pre = el('pre', 'harpre');
+    pre.textContent = d.preview;
+    b.appendChild(pre);
+  }
+
   document.getElementById('nHist').addEventListener('click', function () { devtools('get-nav'); });
   document.getElementById('nEvents').addEventListener('click', function () { devtools('get-events'); });
 
@@ -1499,6 +1540,7 @@
     setDevStatus: setDevStatus,
     showNavHistory: showNavHistory,
     showEvents: showEvents,
-    showDetection: showDetection
+    showDetection: showDetection,
+    showHar: showHar
   };
 })();
