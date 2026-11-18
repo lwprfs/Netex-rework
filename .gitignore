@@ -2,6 +2,7 @@
 *.iml
 .gradle
 .kotlin/
+devtools/
 local.properties
 .idea/
 build/
