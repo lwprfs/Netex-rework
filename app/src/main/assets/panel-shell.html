@@ -183,48 +183,230 @@ iframe.hp { width: 100%; height: 320px; border: 0; background: #fff; display: bl
 .sev-warning { border-left: 3px solid var(--warn); }
 .sev-critical { border-left: 3px solid var(--err); }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+
+/* ===================== Netex DevTools design language ===================== */
+:root { --r: 12px; }
+.appbar { display: flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 4px 0 14px; flex-shrink: 0; background: var(--bg); }
+.appbar .title { flex: 1; min-width: 0; font-size: 15px; font-weight: 700; letter-spacing: .1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appbar .title small { font-weight: 500; font-size: 12px; color: var(--fg-dim); margin-left: 6px; }
+.ib { position: relative; width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; flex-shrink: 0; color: var(--fg-dim); }
+.ib svg { width: 20px; height: 20px; fill: currentColor; }
+.ib:active { background: var(--surface); }
+.ib.on { color: var(--opc); background: var(--pc); }
+.ib.recording { color: var(--rec); background: color-mix(in srgb, var(--rec) 20%, transparent); }
+.ib.paused { color: var(--warn); background: color-mix(in srgb, var(--warn) 20%, transparent); }
+.ib .dotb { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+.subbar { padding: 2px 12px 8px; flex-shrink: 0; }
+.subbar[hidden] { display: none; }
+.search { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 999px; padding: 0 14px; }
+.search input { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: inherit; font: inherit; padding: 9px 0; }
+.search svg { width: 16px; height: 16px; fill: var(--fg-dim); flex-shrink: 0; }
+.segs { display: flex; align-items: center; gap: 4px; padding: 0 10px 8px; flex-shrink: 0; flex-wrap: nowrap; }
+.seg { height: 32px; padding: 0 12px; border-radius: 999px; color: var(--fg-dim); font-weight: 600; font-size: 12.5px; white-space: nowrap; flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; }
+.seg.on { background: var(--pc); color: var(--opc); }
+.seg .n { font-weight: 500; opacity: .75; font-variant-numeric: tabular-nums; }
+.seg.warn.on { background: color-mix(in srgb, var(--warn) 24%, transparent); color: var(--warn); }
+.seg.error.on { background: color-mix(in srgb, var(--err) 24%, transparent); color: var(--err); }
+.seg .badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--primary); color: var(--bg); font-size: 10.5px; line-height: 16px; text-align: center; }
+.seg .badge:empty { display: none; }
+.linkbtn { margin-left: auto; padding: 0 8px; height: 32px; color: var(--primary); font-weight: 600; font-size: 12.5px; flex-shrink: 0; }
+.linkbtn[hidden] { display: none; }
+.summary { display: flex; gap: 10px; align-items: center; padding: 8px 14px; font-size: 11.5px; color: var(--fg-dim); flex-shrink: 0; background: var(--surface-low); }
+.summary .spacer { flex: 1; }
+.summary b { color: var(--fg); font-weight: 600; }
+
+/* pages */
+#netBody { position: absolute; inset: 0; display: flex; }
+.page { display: none; flex: 1; min-width: 0; flex-direction: column; position: relative; }
+.page.active { display: flex; }
+#pgRequests { flex: 1 1 100%; }
+.insp { position: absolute; inset: 0; z-index: 15; display: none; flex-direction: column; background: var(--bg); }
+.insp.open { display: flex; }
+.insp .placeholder { margin: auto; padding: 24px; text-align: center; color: var(--fg-dim); }
+#network-tab.wide #pgRequests { flex: 0 0 42%; border-right: 1px solid var(--outline); }
+#network-tab.wide .insp { position: static; display: flex; flex: 1; min-width: 0; z-index: auto; }
+#network-tab.wide .insp .backb { display: none; }
+#network-tab.wide.tools #pgRequests, #network-tab.wide.tools .insp { display: none; }
+#network-tab.tools #pgRequests, #network-tab.tools .insp { display: none; }
+#network-tab.tools #pgOther { display: flex; }
+
+/* request rows */
+.req { display: flex; align-items: stretch; gap: 0; border-bottom: 1px solid color-mix(in srgb, var(--outline) 45%, transparent); background: var(--bg); cursor: pointer; user-select: none; -webkit-user-select: none; }
+.req.hide { display: none; }
+.req:active { background: var(--surface-low); }
+.req.old { opacity: .55; }
+.req.sel { background: color-mix(in srgb, var(--pc) 35%, var(--bg)); }
+.req.cur { background: var(--surface-low); box-shadow: inset 3px 0 0 var(--primary); }
+.req .rbar { width: 4px; flex-shrink: 0; background: var(--outline); }
+.req.s-ok .rbar { background: var(--ok); } .req.s-redir .rbar { background: var(--primary); }
+.req.s-c4 .rbar { background: var(--warn); } .req.s-c5 .rbar, .req.s-fail .rbar { background: var(--err); }
+.req.s-blocked .rbar, .req.s-na .rbar { background: var(--fg-dim); } .req.s-pending .rbar { background: var(--outline); }
+.req .rmain { flex: 1; min-width: 0; padding: 8px 10px 8px 10px; }
+.req .l1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.req .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.req .l2 { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 11.5px; color: var(--fg-dim); min-width: 0; white-space: nowrap; overflow: hidden; }
+.req .l2 .host { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.req .l2 .dotsep::before { content: '·'; margin-right: 6px; }
+.req .rst { flex-shrink: 0; padding: 8px 12px 8px 0; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; font-variant-numeric: tabular-nums; }
+.req .rst b { font-size: 13px; }
+.req .rst small { font-size: 10.5px; color: var(--fg-dim); }
+.req.s-ok .rst b { color: var(--ok); } .req.s-redir .rst b { color: var(--primary); }
+.req.s-c4 .rst b { color: var(--warn); } .req.s-c5 .rst b, .req.s-fail .rst b { color: var(--err); }
+.req.s-blocked .rst b, .req.s-pending .rst b, .req.s-na .rst b { color: var(--fg-dim); }
+.req .chk { display: none; width: 22px; align-items: center; justify-content: center; padding-left: 8px; color: var(--primary); font-weight: 700; }
+#netList.selecting .req .chk { display: flex; }
+.method { font-weight: 700; font-size: 10.5px; padding: 1px 6px; border-radius: 5px; min-width: 38px; text-align: center; flex-shrink: 0; background: var(--surface); color: var(--fg-dim); }
+
+/* bottom sheet */
+.scrim { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; }
+.sheet { width: 100%; max-height: 82%; overflow-y: auto; overscroll-behavior: contain; background: var(--surface-low); border-radius: 20px 20px 0 0; padding: 6px 14px calc(18px + env(safe-area-inset-bottom, 0px)); animation: sheetin .16s ease-out; }
+@keyframes sheetin { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
+.sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--outline); margin: 4px auto 10px; }
+.sheet h3 { margin: 4px 2px 8px; font-size: 14px; font-weight: 700; }
+.sheet h4 { margin: 14px 2px 6px; font-size: 11.5px; font-weight: 700; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .5px; }
+.sheet .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.opt { height: 34px; padding: 0 13px; border-radius: 999px; background: var(--surface); font-weight: 600; font-size: 12.5px; color: var(--fg-dim); }
+.opt.on { background: var(--pc); color: var(--opc); }
+.mi { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 48px; padding: 0 6px; text-align: left; border-radius: 12px; font-size: 14px; }
+.mi:active { background: var(--surface); }
+.mi svg { width: 20px; height: 20px; fill: var(--fg-dim); flex-shrink: 0; }
+.mi small { display: block; color: var(--fg-dim); font-size: 11.5px; }
+.mi .tx { flex: 1; min-width: 0; }
+.mi.danger { color: var(--err); } .mi.danger svg { fill: var(--err); }
+.mi.dis { opacity: .45; pointer-events: none; }
+.sheet .row2 { display: flex; gap: 8px; margin-top: 14px; }
+.btn { flex: 1; height: 40px; border-radius: 999px; background: var(--surface); font-weight: 700; font-size: 13px; }
+.btn.pri { background: var(--pc); color: var(--opc); }
+.btn.dng { color: var(--err); }
+.btn:disabled { opacity: .4; }
+
+/* inspector */
+.insp .head { display: flex; align-items: center; gap: 2px; padding: 0 4px; min-height: 48px; flex-shrink: 0; }
+.insp .head .t { flex: 1; font-size: 14px; font-weight: 700; padding-left: 4px; }
+.insp .hero { padding: 2px 14px 10px; flex-shrink: 0; }
+.insp .hero .line1 { font: 600 13.5px var(--mono); word-break: break-all; }
+.insp .hero .line2 { margin-top: 3px; font-size: 12.5px; color: var(--fg-dim); }
+.insp .hero .line2 b { font-weight: 700; }
+.itabs { display: flex; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; border-bottom: 1px solid var(--outline); }
+.itabs::-webkit-scrollbar { display: none; }
+.itab { flex: 1 0 auto; padding: 10px 14px; font-weight: 600; font-size: 12.5px; color: var(--fg-dim); border-bottom: 2px solid transparent; white-space: nowrap; }
+.itab.on { color: var(--primary); border-bottom-color: var(--primary); }
+.ibody { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 4px 0 20px; }
+.card { margin: 10px 12px 0; padding: 4px 12px 8px; border-radius: var(--r); background: var(--surface-low); }
+.card > h5 { margin: 8px 0 4px; font-size: 11.5px; font-weight: 700; color: var(--fg-dim); text-transform: uppercase; letter-spacing: .5px; display: flex; align-items: center; }
+.card > h5 .sp { flex: 1; }
+.card > h5 button { text-transform: none; letter-spacing: 0; color: var(--primary); font-size: 12px; font-weight: 600; padding: 2px 6px; }
+.kvr { display: flex; gap: 10px; padding: 5px 0; align-items: flex-start; }
+.kvr .k { flex: 0 0 34%; color: var(--fg-dim); font-size: 12px; word-break: break-word; }
+.kvr .v { flex: 1; min-width: 0; font: 12px/1.45 var(--mono); word-break: break-all; }
+.kvr .v.na { color: var(--fg-dim); font-style: italic; font-family: inherit; }
+.kvr .cp { flex-shrink: 0; width: 28px; height: 28px; margin: -4px -6px -4px 0; color: var(--fg-dim); display: inline-flex; align-items: center; justify-content: center; }
+.kvr .cp svg { width: 15px; height: 15px; fill: currentColor; }
+.tools { display: flex; gap: 6px; padding: 8px 12px 0; flex-wrap: wrap; align-items: center; }
+.tools input { flex: 1; min-width: 120px; background: var(--surface); border: 0; outline: 0; color: inherit; font: 12.5px system-ui, sans-serif; padding: 7px 12px; border-radius: 999px; }
+.tools .opt { height: 30px; }
+.codebox { margin: 8px 12px 0; border-radius: var(--r); background: var(--surface-low); overflow: auto; }
+.codebox pre { margin: 0; padding: 10px 12px; font: 11.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.codebox mark { background: color-mix(in srgb, var(--warn) 45%, transparent); color: inherit; border-radius: 2px; }
+.codebox img { display: block; max-width: 100%; margin: 0 auto; padding: 12px; }
+.codebox model-viewer { display: block; width: 100%; height: 300px; }
+.codebox iframe.hp { width: 100%; height: 320px; border: 0; background: #fff; display: block; }
+.na { color: var(--fg-dim); }
+.statgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 10px 12px 0; }
+.stat { background: var(--surface-low); border-radius: var(--r); padding: 10px 12px; }
+.stat b { display: block; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11.5px; color: var(--fg-dim); }
+.bar2 { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+.bar2 .lb { flex: 0 0 22%; color: var(--fg-dim); }
+.bar2 .tr { flex: 1; height: 8px; border-radius: 4px; background: var(--surface); overflow: hidden; }
+.bar2 .tr i { display: block; height: 100%; background: var(--primary); border-radius: 4px; }
+.bar2 .vl { flex: 0 0 auto; min-width: 70px; text-align: right; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+.toolrow { display: flex; align-items: center; gap: 12px; margin: 10px 12px 0; padding: 12px; border-radius: var(--r); background: var(--surface-low); }
+.toolrow .tx { flex: 1; min-width: 0; } .toolrow small { display: block; color: var(--fg-dim); font-size: 11.5px; }
+.selbar { display: none; align-items: center; gap: 4px; min-height: 44px; padding: 0 4px 0 4px; background: var(--pc); color: var(--opc); flex-shrink: 0; }
+.selbar.on { display: flex; }
+.selbar .t { flex: 1; font-weight: 700; padding-left: 6px; }
+.selbar .ib { color: var(--opc); }
+.ov { z-index: 30; }
+.ovhead { min-height: 48px; padding: 0 6px; gap: 2px; }
+.ovhead b { font-size: 14px; padding-left: 4px; }
+.ovbody { padding: 6px 0 20px; }
+.ovbody > .note, .ovbody > .empty { margin: 8px 14px; }
+.cmenu { display: none; }
+.tab { overflow: hidden; }
+#console-tab .scroll, #netList { background: var(--bg); }
+.prompt { margin: 6px 10px 10px; }
+
+.mi.on svg { fill: var(--primary); } .mi.on .tx { color: var(--primary); }
+.spacer { flex: 1; }
+.entry .stack summary { color: var(--fg-dim); font-size: 11.5px; cursor: pointer; }
+.entry .stack pre { margin: 4px 0 0; font: 11px/1.45 var(--mono); white-space: pre-wrap; color: var(--fg-dim); }
 </style>
 </head>
 <body>
 
 <div id="console-tab" class="tab active">
-  <div class="bar" id="consoleBar"><div class="chips">
-    <button class="chip on" data-f="all" id="fAll">All</button>
-    <button class="chip" data-f="log" id="fLog">Logs<span class="n" id="consoleLogTotal">0</span></button>
-    <button class="chip" data-f="info" id="fInfo">Info</button>
-    <button class="chip" data-f="debug" id="fDebug">Debug</button>
-    <button class="chip warn" data-f="warn" id="fWarn">Warnings<span class="n" id="consoleWarnTotal">0</span></button>
-    <button class="chip error" data-f="error" id="fError">Errors<span class="n" id="consoleErrorTotal">0</span></button>
-  </div></div>
-  <div class="bar wrap" style="padding-top:6px;padding-bottom:6px">
-    <label class="search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><input id="consoleSearch" type="search" placeholder="Filter messages" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-    <button class="chip" id="cTime">Time</button><button class="chip" id="cKeep">Keep</button><button class="chip" id="cCopy">Copy</button><button class="chip" id="cTxt">TXT</button><button class="chip" id="cJson">JSON</button><button class="chip" id="cClear">Clear</button>
+  <div class="appbar">
+    <span class="title">Console</span>
+    <button class="ib" id="cSearchBtn" data-i="search" aria-label="Search messages"></button>
+    <button class="ib" id="cKeep" data-i="pin" aria-label="Preserve log"></button>
+    <button class="ib" id="cClear" data-i="sweep" aria-label="Clear console"></button>
+    <button class="ib" id="cMenuBtn" data-i="more" aria-label="More console options"></button>
+  </div>
+  <div class="subbar" id="cSearchRow" hidden><label class="search"><span data-i="search"></span><input id="consoleSearch" type="search" placeholder="Filter messages" autocomplete="off" autocapitalize="off" spellcheck="false"></label></div>
+  <div class="segs" id="consoleBar">
+    <button class="seg on" data-f="all" id="fAll">All</button>
+    <button class="seg error" data-f="error" id="fError">Errors<span class="n" id="consoleErrorTotal">0</span></button>
+    <button class="seg warn" data-f="warn" id="fWarn">Warnings<span class="n" id="consoleWarnTotal">0</span></button>
+    <button class="seg" data-f="log" id="fLog">Logs<span class="n" id="consoleLogTotal">0</span></button>
   </div>
   <div class="scroll" id="consoleEntries" data-f="all"></div>
-  <form class="prompt" id="consolePrompt"><span>❯</span><textarea id="consoleInput" rows="1" placeholder="Run JavaScript" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea><button type="button" class="pbtn" id="cPrev" aria-label="Previous command">↑</button><button type="button" class="pbtn" id="cNext" aria-label="Next command">↓</button><button type="button" class="pbtn" id="cMulti" aria-label="Multi-line">↵</button><button type="button" class="pbtn" id="cHistClear" aria-label="Clear command history">✕</button><button type="submit" class="pbtn run" id="cRun">Run</button></form>
+  <form class="prompt" id="consolePrompt"><span>❯</span><textarea id="consoleInput" rows="1" placeholder="Run JavaScript" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea><button type="button" class="pbtn" id="cPrev" aria-label="Previous command">↑</button><button type="button" class="pbtn" id="cNext" aria-label="Next command">↓</button><button type="submit" class="pbtn run" id="cRun">Run</button></form>
+  <!-- Secondary console actions (opened from the overflow button; the buttons keep their ids and handlers). -->
+  <div id="cSheetSrc" class="cmenu">
+    <button class="mi" id="cTime"><span data-i="clock"></span><span class="tx">Timestamps<small>Show the time of each message</small></span></button>
+    <button class="mi" id="cMulti"><span data-i="multi"></span><span class="tx">Multi-line input<small>Edit longer scripts, tap Run to execute</small></span></button>
+    <button class="mi" id="cCopy"><span data-i="copy"></span><span class="tx">Copy logs<small>Visible messages as text</small></span></button>
+    <button class="mi" id="cTxt"><span data-i="share"></span><span class="tx">Export as text</span></button>
+    <button class="mi" id="cJson"><span data-i="share"></span><span class="tx">Export as JSON</span></button>
+    <button class="mi" id="cHistClear"><span data-i="history"></span><span class="tx">Clear command history</span></button>
+    <h4>Show only</h4>
+    <div class="opts"><button class="opt" data-f="info" id="fInfo">Info</button><button class="opt" data-f="debug" id="fDebug">Debug</button></div>
+  </div>
 </div>
 
 <div id="source-tab" class="tab">
-  <div class="bar"><span class="count" id="sourceInfo" style="color:var(--fg-dim)">Page source</span><span class="spacer"></span><button class="chip" id="sourceCopy">Copy HTML</button></div>
+  <div class="appbar"><span class="title">Page source<small id="sourceInfo"></small></span><button class="ib" id="sourceCopy" data-i="copy" aria-label="Copy HTML"></button></div>
   <div class="scroll"><pre><code class="language-html"></code></pre></div>
 </div>
 
 <div id="network-tab" class="tab">
-  <div class="bar">
-    <label class="search"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><input id="netSearch" type="search" placeholder="Filter: url, method, status, type" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-    <button type="button" class="har-btn" id="harBtn">HAR</button>
+  <div id="netBody">
+    <div class="page active" id="pgRequests">
+      <div class="appbar" id="netBar">
+        <span class="title">Network</span>
+        <button class="ib" id="nSearchBtn" data-i="search" aria-label="Search requests"></button>
+        <button class="ib" id="nKeep" data-i="pin" aria-label="Preserve log"></button>
+        <button type="button" class="ib" id="harBtn" data-i="rec" aria-label="Recording"></button>
+        <button class="ib" id="nClear" data-i="sweep" aria-label="Clear requests"></button>
+        <button class="ib" id="nMenuBtn" data-i="more" aria-label="Network tools and actions"></button>
+      </div>
+      <div class="selbar" id="selBar"><button class="ib" id="selCancel" data-i="close" aria-label="Cancel selection"></button><span class="t" id="selCount">0 selected</span><button class="ib" id="selAll" data-i="all" aria-label="Select all"></button><button class="ib" id="selCopy" data-i="copy" aria-label="Copy URLs"></button><button class="ib" id="selExport" data-i="share" aria-label="Export"></button></div>
+      <div class="subbar" id="nSearchRow" hidden><label class="search"><span data-i="search"></span><input id="netSearch" type="search" placeholder="Search requests" autocomplete="off" autocapitalize="off" spellcheck="false"></label></div>
+      <div class="segs" id="netChips">
+        <button class="seg on" data-p="all">All</button>
+        <button class="seg" data-p="fetch">Fetch/XHR</button>
+        <button class="seg" data-p="doc">Documents</button>
+        <button class="seg" data-p="more" id="nMoreBtn">More<span class="badge" id="nMoreBadge"></span></button>
+        <button class="linkbtn" id="nReset" hidden>Reset</button>
+      </div>
+      <div id="devStatus" class="devstatus" style="display:none"></div>
+      <div class="scroll" id="netList"><div class="empty"><b>No requests yet</b>Load or reload a page to see its network traffic.</div></div>
+      <div class="summary" id="netSummary"><span id="netTotalsCount"></span><span class="spacer"></span><span id="netTotalsSize"></span></div>
+    </div>
+    <div class="insp" id="inspector"></div>
+    <div class="page" id="pgOther"></div>
   </div>
-  <div class="bar" style="padding-top:6px;padding-bottom:6px"><div class="chips" id="netChips">
-    <button class="chip on" data-t="all">All</button><button class="chip" data-t="doc">Doc</button><button class="chip" data-t="js">JS</button><button class="chip" data-t="css">CSS</button><button class="chip" data-t="img">Img</button><button class="chip" data-t="media">Media</button><button class="chip" data-t="font">Font</button><button class="chip" data-t="fetch">Fetch</button><button class="chip" data-t="xhr">XHR</button><button class="chip" data-t="data">Data</button><button class="chip" data-t="wasm">Wasm</button><button class="chip" data-t="other">Other</button><button class="chip" data-t="failed">Failed</button><button class="chip" data-t="nav">Nav</button><button class="chip" data-t="err">Errors</button><button class="chip" data-t="slow">Slow</button><button class="chip" data-t="more">Filters ▾</button>
-  </div></div>
-  <div id="netMore" style="display:none">
-    <div class="bar" style="padding-top:6px;padding-bottom:6px"><span class="lbl">Method</span><div class="chips" id="netMethods"><button class="chip on" data-m="all">All</button><button class="chip" data-m="GET">GET</button><button class="chip" data-m="POST">POST</button><button class="chip" data-m="PUT">PUT</button><button class="chip" data-m="PATCH">PATCH</button><button class="chip" data-m="DELETE">DELETE</button></div></div>
-    <div class="bar" style="padding-top:6px;padding-bottom:6px"><span class="lbl">Status</span><div class="chips" id="netStatuses"><button class="chip on" data-s="all">All</button><button class="chip" data-s="2">2xx</button><button class="chip" data-s="3">3xx</button><button class="chip" data-s="4">4xx</button><button class="chip" data-s="5">5xx</button><button class="chip" data-s="failed">Failed</button></div></div>
-  </div>
-  <div class="bar" style="padding-top:6px;padding-bottom:6px"><button class="chip" id="nKeep">Preserve</button><button class="chip" id="nHist">Nav history</button><button class="chip" id="nEvents">Events</button><button class="chip" id="nWater">Waterfall</button><button class="chip" id="nCopyUrls">Copy URLs</button><button class="chip" id="nExport">Export</button></div>
-  <div id="devStatus" class="devstatus" style="display:none"></div>
-  <div class="stats"><span id="netTotalsCount"></span><span class="spacer"></span><span id="netTotalsSize"></span></div>
-  <div class="scroll" id="netList"><div class="empty"><b>No requests yet</b>Load or reload a page to see its network traffic.</div></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/js-beautify@1.15.1/js/lib/beautify.min.js"></script>

@@ -4,8 +4,8 @@ import org.json.JSONObject
 
 private const val TAG = "ExtensionBridge"
 
+/** Receives console entries and orientation-lock requests from the page-side shims. */
 class ExtensionBridge(
-    private val router: ExtensionRouter,
     private val onOrientationLock: (String?) -> Unit,
     private val onConsoleEntry: (level: String, segmentsJson: String) -> Unit,
 ) : JsonMessageBridge(TAG) {
@@ -16,12 +16,6 @@ class ExtensionBridge(
 
     override fun onMessage(obj: JSONObject) {
         when (obj.optString("type")) {
-            EnvelopeType.ACTION_SET_BADGE_TEXT -> DetectionStore.setBadgeText(obj.optString("text"))
-            EnvelopeType.ACTION_SET_BADGE_BACKGROUND_COLOR ->
-                DetectionStore.setBadgeBackgroundColor(obj.optString("color").takeIf { it.isNotEmpty() })
-            EnvelopeType.PAGE_READY -> router.onPageReady(obj.optInt("frameId", 0))
-            EnvelopeType.PORT_MESSAGE -> router.onPagePortMessage(obj)
-            EnvelopeType.PORT_DISCONNECT -> router.onPagePortDisconnect(obj)
             EnvelopeType.ORIENTATION_LOCK -> onOrientationLock(obj.optString("orientation"))
             EnvelopeType.ORIENTATION_UNLOCK -> onOrientationLock(null)
             EnvelopeType.CONSOLE_ENTRY -> onConsoleEntry(

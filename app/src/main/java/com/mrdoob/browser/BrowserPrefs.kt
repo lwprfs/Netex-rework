@@ -11,6 +11,11 @@ object BrowserPrefs {
     private const val KEY_FLOAT_Y = "floating_y"
     private const val KEY_FLOAT_ITEMS = "floating_items"
     private const val KEY_HAPTICS = "floating_haptics"
+    private const val KEY_FLOAT_SIZE = "floating_size"
+    private const val KEY_FLOAT_OPACITY = "floating_opacity"
+    private const val KEY_FLOAT_AUTOHIDE = "floating_autohide"
+    private const val KEY_FLOAT_LABELED = "floating_labeled"
+    private const val KEY_FLOAT_RECORD = "floating_record"
     private const val KEY_HOME = "homepage"
     private const val KEY_STARTUP = "startup_mode"
     private const val KEY_JS = "javascript_enabled"
@@ -67,6 +72,25 @@ object BrowserPrefs {
 
     fun floatingY(context: Context): Float =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(KEY_FLOAT_Y, 0f)
+
+
+    /** 0 small, 1 medium (default), 2 large. */
+    fun floatingSize(context: Context): Int = p(context).getInt(KEY_FLOAT_SIZE, 1).coerceIn(0, 2)
+    fun setFloatingSize(context: Context, level: Int) { p(context).edit().putInt(KEY_FLOAT_SIZE, level.coerceIn(0, 2)).apply() }
+
+    /** Opacity of the collapsed bubble in percent, 40 to 100. */
+    fun floatingOpacity(context: Context): Int = p(context).getInt(KEY_FLOAT_OPACITY, 100).coerceIn(40, 100)
+    fun setFloatingOpacity(context: Context, percent: Int) { p(context).edit().putInt(KEY_FLOAT_OPACITY, percent.coerceIn(40, 100)).apply() }
+
+    fun floatingAutoHide(context: Context): Boolean = p(context).getBoolean(KEY_FLOAT_AUTOHIDE, false)
+    fun setFloatingAutoHide(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_FLOAT_AUTOHIDE, on).apply() }
+
+    /** Collapsed style: false = icon only, true = icon with a "Tools" label. */
+    fun floatingLabeled(context: Context): Boolean = p(context).getBoolean(KEY_FLOAT_LABELED, false)
+    fun setFloatingLabeled(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_FLOAT_LABELED, on).apply() }
+
+    fun floatingRecord(context: Context): Boolean = p(context).getBoolean(KEY_FLOAT_RECORD, true)
+    fun setFloatingRecord(context: Context, on: Boolean) { p(context).edit().putBoolean(KEY_FLOAT_RECORD, on).apply() }
 
     fun setFloatingPosition(context: Context, left: Boolean, y: Float) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()

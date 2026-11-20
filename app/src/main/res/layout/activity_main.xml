@@ -157,42 +157,6 @@
                     android:visibility="gone" />
             </FrameLayout>
 
-            <FrameLayout
-                android:id="@+id/threeLogoButton"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_weight="1"
-                android:background="@drawable/ripple_round"
-                android:clickable="true"
-                android:clipChildren="false"
-                android:clipToPadding="false"
-                android:contentDescription="Three.js tools"
-                android:focusable="true">
-
-                <ImageView
-                    android:id="@+id/threeLogo"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
-                    android:layout_gravity="center"
-                    android:alpha="0.3"
-                    android:contentDescription="three.js detection status"
-                    android:src="@drawable/three_logo" />
-
-                <TextView
-                    android:id="@+id/revisionBadge"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="bottom|center_horizontal"
-                    android:layout_marginBottom="1dp"
-                    android:background="@drawable/revision_badge_bg"
-                    android:includeFontPadding="false"
-                    android:paddingHorizontal="3dp"
-                    android:paddingVertical="1dp"
-                    android:textColor="?attr/colorOnPrimary"
-                    android:textSize="9sp"
-                    android:textStyle="bold"
-                    android:visibility="invisible" />
-            </FrameLayout>
         </LinearLayout>
     </com.mrdoob.browser.DragInterceptLinearLayout>
 
@@ -217,7 +181,7 @@
             <ImageButton
                 android:id="@+id/panelFullBack"
                 style="@style/PanelIconButton"
-                android:contentDescription="Back to page"
+                android:contentDescription="Close full screen and return to the page"
                 android:src="@drawable/ic_back" />
 
             <TextView
@@ -226,14 +190,10 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:paddingStart="4dp"
+                android:text="Developer Tools"
                 android:textAppearance="?attr/textAppearanceTitleMedium"
                 android:textColor="?attr/colorOnSurface" />
 
-            <ImageButton
-                android:id="@+id/panelFullClear"
-                style="@style/PanelIconButton"
-                android:contentDescription="Clear"
-                android:src="@drawable/ic_sweep" />
         </LinearLayout>
 
         <LinearLayout
@@ -270,17 +230,13 @@
                     android:layout_height="wrap_content"
                     android:text="Network" />
 
-                <com.google.android.material.tabs.TabItem
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Three.js" />
             </com.google.android.material.tabs.TabLayout>
 
             <ImageButton
-                android:id="@+id/panelClear"
+                android:id="@+id/panelMore"
                 style="@style/PanelIconButton"
-                android:contentDescription="Clear"
-                android:src="@drawable/ic_sweep" />
+                android:contentDescription="More developer tools options"
+                android:src="@drawable/ic_more" />
 
             <ImageButton
                 android:id="@+id/panelExpand"
@@ -307,11 +263,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
-            <WebView
-                android:id="@+id/threePanelView"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:visibility="gone" />
         </FrameLayout>
     </LinearLayout>
 

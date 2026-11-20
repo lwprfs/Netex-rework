@@ -16,7 +16,7 @@ class PanelRenderer(
     private val panelView: WebView,
     private val mainView: WebView
 ) {
-    enum class Tab { CONSOLE, SOURCE, NETWORK, THREEJS }
+    enum class Tab { CONSOLE, SOURCE, NETWORK }
 
     private var shellLoaded = false
     private val pending = ArrayDeque<() -> Unit>()
@@ -48,7 +48,6 @@ class PanelRenderer(
             Tab.CONSOLE -> "console"
             Tab.SOURCE -> "source"
             Tab.NETWORK -> "network"
-            Tab.THREEJS -> return
         }
         afterShellLoaded {
             evalPanel("window.__panel.setActiveTab(${q(name)})")
@@ -154,12 +153,17 @@ class PanelRenderer(
         afterShellLoaded { evalPanel("window.__panel.clearForNavigation($keepFailed, $keepDocs)") }
     }
 
+    /** Live recording numbers for the Recording page and the toolbar's recording indicator. */
+    fun setHarStatus(json: String) {
+        afterShellLoaded { evalPanel("window.__panel.setHarStatus($json)") }
+    }
+
     fun setDevStatus(json: String) {
         afterShellLoaded { evalPanel("window.__panel.setDevStatus($json)") }
     }
 
     fun deliverDevTools(fn: String, json: String) {
-        if (fn !in setOf("showNavHistory", "showEvents", "showDetection", "showHar")) return
+        if (fn !in setOf("showNavHistory", "showEvents", "showDetection", "showHar", "showRules")) return
         afterShellLoaded { evalPanel("window.__panel.$fn(${q(json)})") }
     }
 

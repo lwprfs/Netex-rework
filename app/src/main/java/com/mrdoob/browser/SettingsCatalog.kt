@@ -56,7 +56,16 @@ class SettingMeta(
 
 object SettingsCatalog {
 
-    val all: List<SettingMeta> = baseSettings() + devToolsSettings() + navigationSettings()
+    val all: List<SettingMeta> = baseSettings() + devToolsSettings() + navigationSettings() + floatingSettings()
+
+    private fun floatingSettings(): List<SettingMeta> = listOf(
+        SettingMeta("float_default_side", "Default position", "Which edge the bubble returns to", SettingsCategory.FLOATING, listOf("bubble", "left", "right")),
+        SettingMeta("float_style", "Show a label", "Icon only or icon with a label", SettingsCategory.FLOATING, listOf("bubble", "compact")),
+        SettingMeta("float_size", "Bubble size", "Height of the collapsed bubble", SettingsCategory.FLOATING, listOf("bubble", "small", "large")),
+        SettingMeta("float_opacity", "Bubble opacity", "How solid the collapsed bubble is", SettingsCategory.FLOATING, listOf("bubble", "transparency")),
+        SettingMeta("float_autohide", "Fade when idle", "Dim the bubble after a few seconds", SettingsCategory.FLOATING, listOf("bubble", "auto hide")),
+        SettingMeta("float_record", "Network recording button", "Record, pause and stop from the bubble", SettingsCategory.FLOATING, listOf("bubble", "har"))
+    )
 
     private fun navigationSettings(): List<SettingMeta> = listOf(
         SettingMeta("nav_master", "Navigation Confirmation", "Ask before leaving the current website", SettingsCategory.NAVIGATION,
@@ -122,13 +131,13 @@ object SettingsCatalog {
             listOf("overlay", "record button", "pop-up")),
         SettingMeta("float_haptics", "Haptic feedback", "A small tap on Play, Pause, Resume and Delete cookies", SettingsCategory.FLOATING,
             listOf("vibration", "vibrate")),
-        SettingMeta("float_item_reload", "Hard reload button", "Show it in the bubble's ring", SettingsCategory.FLOATING,
+        SettingMeta("float_item_reload", "Hard reload button", "Show it in the bubble's panel", SettingsCategory.FLOATING,
             listOf("refresh", "ring")),
-        SettingMeta("float_item_har", "Network capture settings button", "Show it in the bubble's ring", SettingsCategory.FLOATING,
+        SettingMeta("float_item_har", "Network capture settings button", "Show it in the bubble's panel", SettingsCategory.FLOATING,
             listOf("har", "ring")),
-        SettingMeta("float_item_cookies", "Cookie settings button", "Show it in the bubble's ring", SettingsCategory.FLOATING,
+        SettingMeta("float_item_cookies", "Cookie settings button", "Show it in the bubble's panel", SettingsCategory.FLOATING,
             listOf("ring")),
-        SettingMeta("float_item_delete", "Delete cookies and site data button", "Show it in the bubble's ring", SettingsCategory.FLOATING,
+        SettingMeta("float_item_delete", "Delete cookies and site data button", "Show it in the bubble's panel", SettingsCategory.FLOATING,
             listOf("ring", "clear")),
 
         SettingMeta("capture_site_only", "This site only", "Record only the site you started on; other sites are ignored", SettingsCategory.CAPTURE,

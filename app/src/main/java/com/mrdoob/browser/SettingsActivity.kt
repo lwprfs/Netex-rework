@@ -51,6 +51,7 @@ class SettingsActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_URL = "url"
+        const val EXTRA_CATEGORY = "category_id"
         private const val STATE_CATEGORY = "category"
         private const val STATE_QUERY = "query"
         private const val STATE_LANDING_SCROLL = "landing_scroll"
@@ -103,6 +104,7 @@ class SettingsActivity : AppCompatActivity() {
         DevToolsPrefs.init(applicationContext)
         pageUrl = intent.getStringExtra(EXTRA_URL)
         category = SettingsCategory.fromId(savedInstanceState?.getString(STATE_CATEGORY))
+            ?: if (savedInstanceState == null) SettingsCategory.fromId(intent.getStringExtra(EXTRA_CATEGORY)) else null
         query = savedInstanceState?.getString(STATE_QUERY).orEmpty()
         landingScroll = savedInstanceState?.getInt(STATE_LANDING_SCROLL) ?: 0
         devPage = DevToolsPrefs.Section.entries.firstOrNull { it.name == savedInstanceState?.getString(STATE_DEVPAGE) }
@@ -794,27 +796,61 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun buildFloating() {
-        section("Bubble")
-        val card = card()
-        switchRow(card, "float_main", R.drawable.ic_settings, "Floating bubble",
-            "Record, reload and cookie buttons on top of the browser (this app only)",
+        section("General")
+        val general = card()
+        switchRow(general, "float_main", R.drawable.ic_settings, "Floating bubble",
+            "Network tools on top of the browser (this app only)",
             { BrowserPrefs.floatingControls(this) }, { BrowserPrefs.setFloatingControls(this, it) },
-
             beforeEnable = { proceed -> ensureStoragePermission(proceed) })
-        switchRow(card, "float_haptics", R.drawable.ic_play, "Haptic feedback",
-            "A small tap on Play, Pause, Resume and Delete cookies",
+        valueRow(general, "float_default_side", R.drawable.ic_open, "Default position",
+            "Which edge the bubble returns to. You can also drag it anywhere.",
+            if (BrowserPrefs.floatingOnLeft(this)) "Left" else "Right") {
+            choiceDialog("Default position", arrayOf("Right edge", "Left edge"), if (BrowserPrefs.floatingOnLeft(this)) 1 else 0) { which ->
+                BrowserPrefs.setFloatingPosition(this, which == 1, 0f)
+                refresh()
+            }
+        }
+        switchRow(general, "float_haptics", R.drawable.ic_play, "Haptic feedback",
+            "A small tap when you open the panel, drag the bubble or use Record, Pause, Resume and Clear site data",
             { BrowserPrefs.floatingHaptics(this) }, { BrowserPrefs.setFloatingHaptics(this, it) })
 
-        section("Buttons in the ring")
-        val ring = card()
+        section("Appearance")
+        val look = card()
+        switchRow(look, "float_style", R.drawable.ic_tune, "Show a label",
+            "Off: icon only. On: icon with the word Tools while idle.",
+            { BrowserPrefs.floatingLabeled(this) }, { BrowserPrefs.setFloatingLabeled(this, it) })
+        valueRow(look, "float_size", R.drawable.ic_text_size, "Size", "Height of the collapsed bubble",
+            arrayOf("Small", "Medium", "Large")[BrowserPrefs.floatingSize(this)]) {
+            choiceDialog("Size", arrayOf("Small", "Medium", "Large"), BrowserPrefs.floatingSize(this)) { which ->
+                BrowserPrefs.setFloatingSize(this, which)
+                refresh()
+            }
+        }
+        valueRow(look, "float_opacity", R.drawable.ic_image, "Opacity", "How solid the collapsed bubble is",
+            "${BrowserPrefs.floatingOpacity(this)}%") {
+            val steps = intArrayOf(100, 85, 70, 55, 40)
+            choiceDialog("Opacity", steps.map { "$it%" }.toTypedArray(), steps.indexOf(BrowserPrefs.floatingOpacity(this)).coerceAtLeast(0)) { which ->
+                BrowserPrefs.setFloatingOpacity(this, steps[which])
+                refresh()
+            }
+        }
+        switchRow(look, "float_autohide", R.drawable.ic_timer, "Fade when idle",
+            "The collapsed bubble dims after three seconds and wakes when touched",
+            { BrowserPrefs.floatingAutoHide(this) }, { BrowserPrefs.setFloatingAutoHide(this, it) })
+
+        section("Actions")
+        val actions = card()
+        switchRow(actions, "float_record", R.drawable.ic_play, "Network recording",
+            "Record, Pause, Resume and Stop. Save and Share HAR appear while a recording exists.",
+            { BrowserPrefs.floatingRecord(this) }, { BrowserPrefs.setFloatingRecord(this, it) })
         val items = listOf(
             Triple(BrowserPrefs.ITEM_RELOAD, R.drawable.ic_refresh, "Hard reload"),
             Triple(BrowserPrefs.ITEM_HAR, R.drawable.ic_network, "Network capture settings"),
-            Triple(BrowserPrefs.ITEM_COOKIES, R.drawable.ic_cookie, "Cookie settings"),
-            Triple(BrowserPrefs.ITEM_DELETE, R.drawable.ic_cookie_off, "Delete cookies and site data")
+            Triple(BrowserPrefs.ITEM_COOKIES, R.drawable.ic_cookie, "Cookies"),
+            Triple(BrowserPrefs.ITEM_DELETE, R.drawable.ic_cookie_off, "Clear site data")
         )
         for ((key, icon, title) in items) {
-            switchRow(ring, "float_item_$key", icon, title, "",
+            switchRow(actions, "float_item_$key", icon, title, "",
                 { key in BrowserPrefs.floatingItems(this) },
                 { on ->
                     val set = BrowserPrefs.floatingItems(this).toMutableSet()
@@ -822,7 +858,7 @@ class SettingsActivity : AppCompatActivity() {
                     BrowserPrefs.setFloatingItems(this, set)
                 })
         }
-        hint("Play, Resume, Save and Share are always available.")
+        hint("Tap the bubble to open the panel and tap outside it to close. The bubble hides while the developer tools are full screen.")
     }
 
     private fun buildCapture() {

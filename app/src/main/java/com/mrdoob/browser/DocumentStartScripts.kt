@@ -2,38 +2,24 @@ package com.mrdoob.browser
 
 import android.content.Context
 
+/** Scripts injected at document start in every frame, joined into one bundle. */
 object DocumentStartScripts {
 
     private val ASSETS = listOf(
-        Asset("threejs-devtools/constants.js"),
-        Asset("chrome-shim-page.js"),
-        Asset("threejs-devtools/bridge.js"),
-        Asset("threejs-devtools/highlight.js"),
-        Asset("threejs-devtools/content-script.js", wrap = Wrap.CONTENT_SCRIPT),
-        Asset("threejs-devtools/background.js", wrap = Wrap.IIFE),
-        Asset("network-shim.js"),
-        Asset("devtools-probe.js"),
-        Asset("nav-guard.js"),
-        Asset("orientation-shim.js"),
-        Asset("console-shim.js"),
+        "network-shim.js",
+        "devtools-probe.js",
+        "nav-guard.js",
+        "orientation-shim.js",
+        "console-shim.js",
     )
-
-    private enum class Wrap { NONE, IIFE, CONTENT_SCRIPT }
-    private data class Asset(val path: String, val wrap: Wrap = Wrap.NONE)
 
     @Volatile
     private var cached: String? = null
 
     fun load(context: Context): String {
         cached?.let { return it }
-        val joined = ASSETS.joinToString(separator = ";\n") { asset ->
-            val text = context.assets.open(asset.path).bufferedReader().use { it.readText() }
-            when (asset.wrap) {
-                Wrap.NONE -> text
-                Wrap.IIFE -> "(function(){\n$text\n})();"
-                Wrap.CONTENT_SCRIPT ->
-                    "(function(chrome){\n$text\n})(window.__netexExt.createContentScriptChrome());"
-            }
+        val joined = ASSETS.joinToString(separator = ";\n") { path ->
+            context.assets.open(path).bufferedReader().use { it.readText() }
         }
         cached = joined
         return joined

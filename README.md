@@ -1,25 +1,25 @@
 # Netex Browser
 
 A minimal Android browser with a built-in devtools panel. Drag up the
-bottom bar to open it — four tabs:
+bottom bar to open it — three tools plus a **More** menu:
 
-- **Console** — live page logs plus a JS prompt that evaluates in
-  the page's global scope.
+- **Console** — live page logs plus a JS prompt that evaluates in the page's global scope. Search, level
+  filters, Preserve log and Clear are on the bar; timestamps, copy/export, command history and multi-line
+  input are in the overflow menu. Error stack traces fold under the message.
 - **Source** — formatted page HTML.
-- **Network** — fetch/XHR log with inline image / glTF previews.
-- **Three.js** — the vendored
-  [Three.js DevTools](https://github.com/mrdoob/three.js/tree/dev/devtools)
-  Chrome extension running in-process via a minimum `chrome.*` shim.
-  Its background script drives the revision badge on the logo.
+- **Network** — compact request list (search, All / Fetch-XHR / Documents, More filters in a bottom sheet),
+  a full-screen request inspector (Overview, Headers, Payload, Response, Timing) and separate Network pages:
+  Requests, Recording, Navigation, Rules, Statistics and HAR Files, opened from the overflow menu. In full
+  screen on a wide window the list and inspector sit side by side.
 
 ## Navigation
 
-The bottom bar is now a full navigation dock: **back**, **forward**, a
-**dev tools** toggle, the **menu** and the Three.js status button. The URL pill
-shows the site (lock icon for HTTPS, warning for HTTP) and has a **reload / stop**
+The bottom bar is a full navigation dock: **back**, **forward**, a **dev tools** toggle and the **menu**.
+The URL pill shows the site (lock icon for HTTPS, warning for HTTP) and has a **reload / stop**
 button built in. Tap the handle above the pill, tap the `</>` button, or drag the
 bar up to open the panel; it animates open and snaps shut when barely open.
-The panel has tabs for Console, Source, Network and Three.js, plus clear and close buttons.
+The panel header has the tool tabs, a More menu (settings shortcuts), full screen and close. Full screen
+hides the page and address bar and keeps the tabs; its back button returns to the page with the drawer open.
 
 ## Menu
 

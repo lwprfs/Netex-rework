@@ -225,7 +225,8 @@ object HarRecorder {
         val rec = synchronized(lock) { Snapshot(pages.values.toList(), entries.values.toList()) }
         val fromRecording = rec.entries.isNotEmpty()
         val snap = if (fromRecording) rec else logSnapshot()
-        val picked = snap.entries.filter { type.isEmpty() || type == "all" || matchesType(it.record, type) }
+        val wanted = type.split(',').filter { it.isNotEmpty() }
+        val picked = snap.entries.filter { wanted.isEmpty() || wanted.contains("all") || wanted.any { t -> matchesType(it.record, t) } }
         val used = picked.mapNotNull { it.pageId }.toSet()
         val out = Snapshot(snap.pages.filter { it.id in used }, picked)
         val sw = java.io.StringWriter()

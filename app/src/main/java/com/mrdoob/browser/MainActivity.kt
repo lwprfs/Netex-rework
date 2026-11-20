@@ -77,9 +77,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var panel: PanelRenderer
 
-    private val extensionRouter = ExtensionRouter()
     private val extensionBridge = ExtensionBridge(
-        router = extensionRouter,
         onOrientationLock = { type -> applyOrientationLock(type) },
         onConsoleEntry = { level, segmentsJson ->
             ConsoleLog.add(ConsoleLog.Entry(
@@ -88,7 +86,6 @@ class MainActivity : AppCompatActivity() {
             ))
         }
     )
-    private val panelExtensionBridge = PanelExtensionBridge(extensionRouter)
     private val networkBridge = NetworkBridge { rid, dataUrl -> panel.deliverBlob(rid, dataUrl) }
     private val panelBridge = PanelBridge(
         onFetchBlob = { rid -> fetchBlobFromMain(rid) },
@@ -204,16 +201,12 @@ class MainActivity : AppCompatActivity() {
         InjectionStore.init(applicationContext)
         desktopMode = DesktopMode.isEnabled(this)
         documentStartScript = DocumentStartScripts.load(this)
-        extensionRouter.bindPageView(binding.webView)
-        extensionRouter.bindPanelView(binding.threePanelView)
         installBridges()
         configureWebView()
         panel = PanelRenderer(this, binding.panelView, binding.webView).also { it.init() }
-        setupThreeJsPanel(this, binding.threePanelView, panelExtensionBridge)
         floatingControls = FloatingControls(binding.root, floatingHost)
         floatingControls.applyPrefs()
         findBar = FindInPage(binding.root, binding.webView)
-        observeDetectionState()
         observeNetworkLog()
         observeHarState()
         observeHarSize()
@@ -233,12 +226,10 @@ class MainActivity : AppCompatActivity() {
         setupDragHandler()
         binding.webView.roundCorners(22)
         binding.panelView.roundCorners(18)
-        binding.threePanelView.roundCorners(18)
         updateNavState()
         updateSecurityIcon()
 
         excludeFromSystemGestures(binding.navBack)
-        excludeFromSystemGestures(binding.threeLogoButton)
 
         if (savedInstanceState != null) {
             binding.webView.restoreState(savedInstanceState)
@@ -451,7 +442,6 @@ class MainActivity : AppCompatActivity() {
                 setLoading(true)
                 siteIcon = null
                 updateFavicon()
-                DetectionStore.reset()
 
                 val started = NavigationTracker.onPageStarted(url)
                 pageEventAt = System.currentTimeMillis()
@@ -467,7 +457,6 @@ class MainActivity : AppCompatActivity() {
                 lastStartedNavId = started?.navId ?: 0
                 if (BrowserPrefs.devFlag(this@MainActivity, "keep_console")) panel.markNavigation("console", url)
                 else ConsoleLog.reset()
-                extensionRouter.onPageNavigationStarted()
                 setUrlBubbleProgress(0, animate = false)
                 if (!docStartInjectionAvailable && lastInjectedNav != lastStartedNavId) {
 
@@ -645,33 +634,6 @@ class MainActivity : AppCompatActivity() {
         if (requestedOrientation != value) requestedOrientation = value
     }
 
-    private fun observeDetectionState() {
-        var appliedTint: Int? = null
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                DetectionStore.flow.collect { state ->
-                    when (state) {
-                        is DetectionState.NotDetected -> {
-                            binding.threeLogo.alpha = 0.3f
-                            binding.revisionBadge.visibility = View.INVISIBLE
-                        }
-                        is DetectionState.Detected -> {
-                            binding.threeLogo.alpha = 1.0f
-                            binding.revisionBadge.text = state.badgeText
-                            binding.revisionBadge.visibility = View.VISIBLE
-                            val tint = state.backgroundColor?.let(::parseHexColor)
-                                ?: binding.revisionBadge.materialColor(com.google.android.material.R.attr.colorPrimary)
-                            if (tint != appliedTint) {
-                                binding.revisionBadge.background?.mutate()?.setTint(tint)
-                                appliedTint = tint
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private fun observeNetworkLog() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -772,6 +734,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 launch { NavConfirm.forms.collect { handleFormAsk(it) } }
+                launch { HarRecorder.status.collect { pushHarStatus(it) } }
                 launch {
                     kotlinx.coroutines.flow.merge(
                         DevToolsPrefs.revision.map { 0 }, HarRecorder.status.map { 0 }, DevToolsEvents.revision.map { 0 }
@@ -779,6 +742,51 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+
+    private fun sendRules() {
+        val arr = org.json.JSONArray()
+        RequestRules.rules().forEach {
+            arr.put(JSONObject().put("pattern", it.pattern).put("action", it.action.name).put("status", it.status).put("enabled", it.enabled))
+        }
+        panel.deliverDevTools("showRules", JSONObject().put("rules", arr).put("delayMs", RequestRules.delayMs).toString())
+    }
+
+    /** [index] comes from the list the panel is showing; it is ignored if that list no longer has it. */
+    private fun editRules(index: Int, edit: (MutableList<RequestRules.Rule>) -> Unit) {
+        val rules = RequestRules.rules().toMutableList()
+        if (index !in rules.indices) return
+        edit(rules)
+        RequestRules.save(rules)
+        sendRules()
+    }
+
+    /** "Save" in the response view: a text file in Downloads/Netex. */
+    private fun saveTextToDownloads(name: String, text: String) {
+        if (text.isEmpty() || text.length > 8_000_000) {
+            Toast.makeText(this, "Nothing to save, or the response is too large", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val safe = name.replace(Regex("[^A-Za-z0-9._-]+"), "_").take(80).ifEmpty { "response.txt" }
+        lifecycleScope.launch {
+            val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                java.io.File(cacheDir, "har/view").apply { mkdirs() }.let { java.io.File(it, safe).also { f -> f.writeText(text) } }
+            }
+            HarExporter.saveFile(this@MainActivity, file)
+        }
+    }
+
+    private fun pushHarStatus(st: HarRecorder.Status) {
+        if (!::panel.isInitialized) return
+        panel.setHarStatus(
+            JSONObject()
+                .put("state", st.state.name.lowercase())
+                .put("entries", st.entries).put("pages", st.pages).put("bytes", st.bytes)
+                .put("maxBytes", st.maxBytes).put("maxEntries", st.maxEntries)
+                .put("nearLimit", st.nearLimit).put("full", st.full)
+                .toString()
+        )
     }
 
     private fun pushDevStatus() {
@@ -850,13 +858,13 @@ class MainActivity : AppCompatActivity() {
             "save" -> { harViewFile?.let { f -> lifecycleScope.launch { HarExporter.saveFile(this@MainActivity, f) } }; return }
             "settings" -> { showHarSheet(); return }
         }
-        val filter = msg.optString("filter", "all").filter { it.isLetterOrDigit() }.ifEmpty { "all" }
+        val filter = msg.optString("filter", "all").filter { it.isLetterOrDigit() || it == ',' }.ifEmpty { "all" }
         val pageUrl = currentUrl
         lifecycleScope.launch {
             val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 val har = HarRecorder.buildViewerHar(filter)
                 val dir = java.io.File(cacheDir, "har/view").apply { mkdirs() }
-                val file = java.io.File(dir, HarBuilder.fileBase(listOf(pageUrl)) + "_" + filter + ".har")
+                val file = java.io.File(dir, HarBuilder.fileBase(listOf(pageUrl)) + "_" + filter.replace(',', '-') + ".har")
                 file.writeText(har.text)
                 harViewFile = file
                 val limit = 600_000
@@ -1087,6 +1095,16 @@ class MainActivity : AppCompatActivity() {
             "set-preserve" -> DevToolsPrefs.userSet(Flag.PRESERVE_NAV, msg.optBoolean("on"), host)
             "get-nav" -> panel.deliverDevTools("showNavHistory", NavigationTracker.snapshotJson())
             "get-events" -> panel.deliverDevTools("showEvents", DevToolsEvents.toJson())
+            "clear-network" -> NetworkLog.reset()
+            "har-start" -> HarRecorder.start()
+            "har-pause", "har-resume" -> HarRecorder.togglePause()
+            "har-stop" -> HarRecorder.stop()
+            "get-rules" -> sendRules()
+            "rule-toggle" -> msg.optInt("index", -1).let { i -> editRules(i) { it[i] = it[i].copy(enabled = !it[i].enabled) } }
+            "rule-delete" -> msg.optInt("index", -1).let { i -> editRules(i) { it.removeAt(i) } }
+            "rule-add" -> { blockPattern(msg.optString("pattern")); sendRules() }
+            "open-category" -> openSettingsCategory(msg.optString("id"))
+            "save-text" -> saveTextToDownloads(msg.optString("name"), msg.optString("text"))
             "clear-events" -> { DevToolsEvents.clear(); panel.deliverDevTools("showEvents", DevToolsEvents.toJson()) }
             "export-events" -> shareText("Netex developer tools events", DevToolsEvents.exportText())
             "clear-nav" -> NavigationTracker.clearHistory()
@@ -1203,12 +1221,12 @@ class MainActivity : AppCompatActivity() {
         val current = binding.bottomPanel.layoutParams.height
         heightBeforeFullscreen = if (current > 0) current else minOf(maxPanelHeight(), (binding.root.height * 0.5f).toInt())
         panelFullscreen = true
+        // The page and the address bar go away; the tool tabs stay as the workspace's own navigation.
         binding.webView.visibility = View.GONE
         binding.chromeContainer.visibility = View.GONE
-        binding.panelTabRow.visibility = View.GONE
         binding.panelFullBar.visibility = View.VISIBLE
-        binding.panelFullTitle.text = binding.panelTabs.getTabAt(currentTab.ordinal)?.text ?: ""
-        binding.panelFullClear.visibility = if (currentTab == PanelRenderer.Tab.CONSOLE || currentTab == PanelRenderer.Tab.NETWORK) View.VISIBLE else View.INVISIBLE
+        binding.panelExpand.visibility = View.GONE
+        binding.panelClose.visibility = View.GONE
         val params = binding.bottomPanel.layoutParams
         params.height = ViewGroup.LayoutParams.MATCH_PARENT
         binding.bottomPanel.layoutParams = params
@@ -1217,14 +1235,15 @@ class MainActivity : AppCompatActivity() {
         if (currentTab == PanelRenderer.Tab.SOURCE) maybeRefreshSource()
     }
 
-    /** Back button of the full-screen panel: return to the page with the drawer open at its previous size. */
+    /** Close button of the full-screen workspace: back to the page with the drawer open at its previous size. */
     private fun exitPanelFullscreen() {
         if (!panelFullscreen) return
         panelFullscreen = false
         binding.webView.visibility = View.VISIBLE
         binding.chromeContainer.visibility = View.VISIBLE
         binding.panelFullBar.visibility = View.GONE
-        binding.panelTabRow.visibility = View.VISIBLE
+        binding.panelExpand.visibility = View.VISIBLE
+        binding.panelClose.visibility = View.VISIBLE
         floatingControls.setSuppressed(false)
         val params = binding.bottomPanel.layoutParams
         params.height = 0
@@ -1233,6 +1252,36 @@ class MainActivity : AppCompatActivity() {
             val h = heightBeforeFullscreen.coerceIn(dp(120), maxOf(dp(120), maxPanelHeight()))
             setPanelHeight(h)
         }
+    }
+
+    /** The tab row's "More" button: preferences that belong to the tools but not to one tab. */
+    private fun showPanelMoreMenu(anchor: View) {
+        val menu = android.widget.PopupMenu(this, anchor)
+        menu.menu.add(0, 1, 0, "Developer Tools settings")
+        menu.menu.add(0, 2, 1, "Network capture settings")
+        menu.menu.add(0, 3, 2, "Request rules")
+        menu.menu.add(0, 4, 3, "Navigation protection")
+        menu.menu.add(0, 5, 4, "Floating bubble settings")
+        menu.setOnMenuItemClickListener { item ->
+            val id = when (item.itemId) {
+                1 -> SettingsCategory.DEVELOPER.id
+                2 -> SettingsCategory.CAPTURE.id
+                3 -> SettingsCategory.RULES.id
+                4 -> SettingsCategory.NAVIGATION.id
+                else -> SettingsCategory.FLOATING.id
+            }
+            openSettingsCategory(id)
+            true
+        }
+        menu.show()
+    }
+
+    private fun openSettingsCategory(id: String) {
+        startActivity(
+            Intent(this, SettingsActivity::class.java)
+                .putExtra(SettingsActivity.EXTRA_URL, currentUrl.takeIf { it.startsWith("http") })
+                .putExtra(SettingsActivity.EXTRA_CATEGORY, id)
+        )
     }
 
     private fun toggleFullscreenPanel() {
@@ -1477,10 +1526,6 @@ class MainActivity : AppCompatActivity() {
         binding.securityIcon.setOnClickListener {
             Toast.makeText(this, binding.securityIcon.contentDescription, Toast.LENGTH_SHORT).show()
         }
-        binding.threeLogoButton.setOnClickListener {
-            dismissUrlEditing()
-            openPanelTab(PanelRenderer.Tab.THREEJS)
-        }
     }
 
     private fun updateNavState() {
@@ -1517,17 +1562,10 @@ class MainActivity : AppCompatActivity() {
             override fun onTabUnselected(tab: TabLayout.Tab) {}
             override fun onTabReselected(tab: TabLayout.Tab) {}
         })
-        binding.panelClear.setOnClickListener {
-            when (currentTab) {
-                PanelRenderer.Tab.CONSOLE -> ConsoleLog.reset()
-                PanelRenderer.Tab.NETWORK -> NetworkLog.reset()
-                else -> Unit
-            }
-        }
+        binding.panelMore.setOnClickListener { showPanelMoreMenu(it) }
         binding.panelClose.setOnClickListener { animatePanelTo(0) }
         binding.panelExpand.setOnClickListener { enterPanelFullscreen() }
         binding.panelFullBack.setOnClickListener { exitPanelFullscreen() }
-        binding.panelFullClear.setOnClickListener { binding.panelClear.performClick() }
     }
 
     private fun excludeFromSystemGestures(view: View) {
@@ -1541,12 +1579,8 @@ class MainActivity : AppCompatActivity() {
         if (tab == currentTab) return
         currentTab = tab
         if (Appearance.rememberTab(this)) BrowserPrefs.setDev(this, "last_tab", tab.ordinal.toString())
-        binding.panelClear.visibility =
-            if (tab == PanelRenderer.Tab.CONSOLE || tab == PanelRenderer.Tab.NETWORK) View.VISIBLE else View.INVISIBLE
-        val showThreeJs = tab == PanelRenderer.Tab.THREEJS
-        binding.panelView.visibility = if (showThreeJs) View.GONE else View.VISIBLE
-        binding.threePanelView.visibility = if (showThreeJs) View.VISIBLE else View.GONE
-        if (!showThreeJs) panel.setTab(tab)
+        panel.setTab(tab)
+        if (panelFullscreen) binding.panelFullTitle.text = "Developer Tools"
         if (tab == PanelRenderer.Tab.SOURCE) maybeRefreshSource()
     }
 
